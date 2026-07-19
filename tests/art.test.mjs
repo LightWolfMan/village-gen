@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
 
 const root = new URL('../assets/buildings/', import.meta.url);
+const environmentRoot = new URL('../assets/environment/', import.meta.url);
+const propsRoot = new URL('../assets/props/', import.meta.url);
 
 function chunks(buffer, wanted) {
   const values = [];
@@ -50,13 +52,16 @@ function decodeRgba(buffer) {
   return { width, height, pixels };
 }
 
-test('manifesto Blender referencia vinte sprites RGBA pequenos e transparentes', async () => {
+test('manifesto Blender referencia 48 edificios RGBA transparentes', async () => {
   const manifest = JSON.parse(await readFile(new URL('manifest.json', root), 'utf8'));
   assert.equal(manifest.schemaVersion, 1);
-  assert.equal(manifest.entries.length, 20);
-  assert.deepEqual(new Set(manifest.entries.map(({ family }) => family)), new Set(['cottage', 'townhouse', 'workshop', 'civic', 'farmstead']));
+  assert.equal(manifest.entries.length, 48);
+  assert.deepEqual(new Set(manifest.entries.map(({ family }) => family)), new Set([
+    'cottage', 'townhouse', 'workshop', 'civic', 'farmstead',
+    'inn', 'shop', 'merchant', 'artisan', 'smithy', 'market', 'mill',
+  ]));
   assert.deepEqual(new Set(manifest.entries.map(({ orientation }) => orientation)), new Set(['north', 'east', 'south', 'west']));
-  assert.equal(new Set(manifest.entries.map(({ key }) => key)).size, 20);
+  assert.equal(new Set(manifest.entries.map(({ key }) => key)).size, 48);
 
   let totalBytes = 0;
   for (const entry of manifest.entries) {
@@ -71,5 +76,39 @@ test('manifesto Blender referencia vinte sprites RGBA pequenos e transparentes',
     assert.deepEqual([alpha(0, 0), alpha(255, 0), alpha(0, 255), alpha(255, 255)], [0, 0, 0, 0]);
     assert.ok(image.pixels.some((value, index) => index % 4 === 3 && value > 0), `${entry.src} está vazio`);
   }
-  assert.ok(totalBytes < 8 * 1024 * 1024, `sprites excederam 8 MiB: ${totalBytes}`);
+  assert.ok(totalBytes < 20 * 1024 * 1024, `sprites excederam 20 MiB: ${totalBytes}`);
+});
+
+test('manifesto Blender de ambiente referencia seis sprites RGBA transparentes', async () => {
+  const manifest = JSON.parse(await readFile(new URL('manifest.json', environmentRoot), 'utf8'));
+  assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.baseTileWidth, 64);
+  assert.equal(manifest.entries.length, 6);
+  assert.deepEqual(new Set(manifest.entries.map(({ type }) => type)), new Set([
+    'road-street', 'road-main', 'road-plaza', 'bridge-ew', 'bridge-ns', 'bridge-cross',
+  ]));
+  for (const entry of manifest.entries) {
+    assert.equal(entry.key, entry.type);
+    assert.match(entry.src, /^\/assets\/environment\/(road-(street|main|plaza)|bridge-(ew|ns|cross))\.png$/);
+    const image = decodeRgba(await readFile(new URL(entry.src.split('/').at(-1), environmentRoot)));
+    assert.deepEqual([image.width, image.height], [128, 128]);
+    const alpha = (x, y) => image.pixels[(y * image.width + x) * 4 + 3];
+    assert.deepEqual([alpha(0, 0), alpha(127, 0), alpha(0, 127), alpha(127, 127)], [0, 0, 0, 0]);
+  }
+});
+
+test('props Blender possuem dimensoes contratadas, conteudo e cantos transparentes', async () => {
+  const expected = new Map([
+    ['temperate-tree.png', [64, 96]], ['snowy-pine.png', [64, 96]],
+    ['desert-cactus.png', [48, 64]], ['swamp-willow.png', [80, 96]],
+    ['rock.png', [48, 40]], ['bush.png', [48, 40]], ['reeds.png', [40, 56]],
+    ['well.png', [56, 64]], ['cart.png', [72, 56]], ['haystack.png', [48, 56]],
+  ]);
+  for (const [filename, dimensions] of expected) {
+    const image = decodeRgba(await readFile(new URL(filename, propsRoot)));
+    assert.deepEqual([image.width, image.height], dimensions, filename);
+    const alpha = (x, y) => image.pixels[(y * image.width + x) * 4 + 3];
+    assert.deepEqual([alpha(0, 0), alpha(image.width - 1, 0), alpha(0, image.height - 1), alpha(image.width - 1, image.height - 1)], [0, 0, 0, 0], filename);
+    assert.ok(image.pixels.some((value, index) => index % 4 === 3 && value > 0), `${filename} esta vazio`);
+  }
 });

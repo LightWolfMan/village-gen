@@ -14,8 +14,8 @@
       "height": 256,
       "anchorX": 128.0,
       "anchorY": 163.273,
-      "doorX": 145.6,
-      "doorY": 172.073,
+      "doorX": 136.48,
+      "doorY": 176.633,
       "footprint": [
         3,
         2
@@ -31,8 +31,8 @@
       "height": 256,
       "anchorX": 128.0,
       "anchorY": 163.273,
-      "doorX": 110.4,
-      "doorY": 172.073,
+      "doorX": 101.28,
+      "doorY": 167.513,
       "footprint": [
         3,
         2
@@ -48,8 +48,8 @@
       "height": 256,
       "anchorX": 128.0,
       "anchorY": 163.273,
-      "doorX": 110.4,
-      "doorY": 154.473,
+      "doorX": 119.52,
+      "doorY": 149.913,
       "footprint": [
         3,
         2
@@ -65,8 +65,8 @@
       "height": 256,
       "anchorX": 128.0,
       "anchorY": 163.273,
-      "doorX": 145.6,
-      "doorY": 154.473,
+      "doorX": 154.72,
+      "doorY": 159.033,
       "footprint": [
         3,
         2
@@ -342,6 +342,482 @@
       "footprint": [
         4,
         3
+      ]
+    },
+    {
+      "key": "temperate:inn:south",
+      "biome": "temperate",
+      "family": "inn",
+      "orientation": "south",
+      "src": "/assets/buildings/temperate/inn-south.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 141.216,
+      "doorY": 183.865,
+      "footprint": [
+        5,
+        4
+      ]
+    },
+    {
+      "key": "temperate:inn:east",
+      "biome": "temperate",
+      "family": "inn",
+      "orientation": "east",
+      "src": "/assets/buildings/temperate/inn-east.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 86.816,
+      "doorY": 169.881,
+      "footprint": [
+        5,
+        4
+      ]
+    },
+    {
+      "key": "temperate:inn:north",
+      "biome": "temperate",
+      "family": "inn",
+      "orientation": "north",
+      "src": "/assets/buildings/temperate/inn-north.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 114.784,
+      "doorY": 142.681,
+      "footprint": [
+        5,
+        4
+      ]
+    },
+    {
+      "key": "temperate:inn:west",
+      "biome": "temperate",
+      "family": "inn",
+      "orientation": "west",
+      "src": "/assets/buildings/temperate/inn-west.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 169.184,
+      "doorY": 156.665,
+      "footprint": [
+        5,
+        4
+      ]
+    },
+    {
+      "key": "temperate:shop:south",
+      "biome": "temperate",
+      "family": "shop",
+      "orientation": "south",
+      "src": "/assets/buildings/temperate/shop-south.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 138.752,
+      "doorY": 179.897,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:shop:east",
+      "biome": "temperate",
+      "family": "shop",
+      "orientation": "east",
+      "src": "/assets/buildings/temperate/shop-east.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 94.752,
+      "doorY": 168.649,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:shop:north",
+      "biome": "temperate",
+      "family": "shop",
+      "orientation": "north",
+      "src": "/assets/buildings/temperate/shop-north.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 117.248,
+      "doorY": 146.649,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:shop:west",
+      "biome": "temperate",
+      "family": "shop",
+      "orientation": "west",
+      "src": "/assets/buildings/temperate/shop-west.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 161.248,
+      "doorY": 157.897,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:merchant:south",
+      "biome": "temperate",
+      "family": "merchant",
+      "orientation": "south",
+      "src": "/assets/buildings/temperate/merchant-south.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 137.76,
+      "doorY": 178.793,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:merchant:east",
+      "biome": "temperate",
+      "family": "merchant",
+      "orientation": "east",
+      "src": "/assets/buildings/temperate/merchant-east.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 96.96,
+      "doorY": 168.153,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:merchant:north",
+      "biome": "temperate",
+      "family": "merchant",
+      "orientation": "north",
+      "src": "/assets/buildings/temperate/merchant-north.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 118.24,
+      "doorY": 147.753,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:merchant:west",
+      "biome": "temperate",
+      "family": "merchant",
+      "orientation": "west",
+      "src": "/assets/buildings/temperate/merchant-west.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 159.04,
+      "doorY": 158.393,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:artisan:south",
+      "biome": "temperate",
+      "family": "artisan",
+      "orientation": "south",
+      "src": "/assets/buildings/temperate/artisan-south.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 139.344,
+      "doorY": 180.801,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:artisan:east",
+      "biome": "temperate",
+      "family": "artisan",
+      "orientation": "east",
+      "src": "/assets/buildings/temperate/artisan-east.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 92.944,
+      "doorY": 168.945,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:artisan:north",
+      "biome": "temperate",
+      "family": "artisan",
+      "orientation": "north",
+      "src": "/assets/buildings/temperate/artisan-north.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 116.656,
+      "doorY": 145.745,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:artisan:west",
+      "biome": "temperate",
+      "family": "artisan",
+      "orientation": "west",
+      "src": "/assets/buildings/temperate/artisan-west.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 163.056,
+      "doorY": 157.601,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:smithy:south",
+      "biome": "temperate",
+      "family": "smithy",
+      "orientation": "south",
+      "src": "/assets/buildings/temperate/smithy-south.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 140.68,
+      "doorY": 182.533,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:smithy:east",
+      "biome": "temperate",
+      "family": "smithy",
+      "orientation": "east",
+      "src": "/assets/buildings/temperate/smithy-east.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 89.48,
+      "doorY": 169.613,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:smithy:north",
+      "biome": "temperate",
+      "family": "smithy",
+      "orientation": "north",
+      "src": "/assets/buildings/temperate/smithy-north.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 115.32,
+      "doorY": 144.013,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:smithy:west",
+      "biome": "temperate",
+      "family": "smithy",
+      "orientation": "west",
+      "src": "/assets/buildings/temperate/smithy-west.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 166.52,
+      "doorY": 156.933,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:market:south",
+      "biome": "temperate",
+      "family": "market",
+      "orientation": "south",
+      "src": "/assets/buildings/temperate/market-south.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 157.6,
+      "doorY": 178.073,
+      "footprint": [
+        5,
+        4
+      ]
+    },
+    {
+      "key": "temperate:market:east",
+      "biome": "temperate",
+      "family": "market",
+      "orientation": "east",
+      "src": "/assets/buildings/temperate/market-east.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 98.4,
+      "doorY": 178.073,
+      "footprint": [
+        5,
+        4
+      ]
+    },
+    {
+      "key": "temperate:market:north",
+      "biome": "temperate",
+      "family": "market",
+      "orientation": "north",
+      "src": "/assets/buildings/temperate/market-north.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 98.4,
+      "doorY": 148.473,
+      "footprint": [
+        5,
+        4
+      ]
+    },
+    {
+      "key": "temperate:market:west",
+      "biome": "temperate",
+      "family": "market",
+      "orientation": "west",
+      "src": "/assets/buildings/temperate/market-west.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 157.6,
+      "doorY": 148.473,
+      "footprint": [
+        5,
+        4
+      ]
+    },
+    {
+      "key": "temperate:mill:south",
+      "biome": "temperate",
+      "family": "mill",
+      "orientation": "south",
+      "src": "/assets/buildings/temperate/mill-south.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 140.64,
+      "doorY": 181.753,
+      "footprint": [
+        4,
+        4
+      ]
+    },
+    {
+      "key": "temperate:mill:east",
+      "biome": "temperate",
+      "family": "mill",
+      "orientation": "east",
+      "src": "/assets/buildings/temperate/mill-east.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 91.04,
+      "doorY": 169.593,
+      "footprint": [
+        4,
+        4
+      ]
+    },
+    {
+      "key": "temperate:mill:north",
+      "biome": "temperate",
+      "family": "mill",
+      "orientation": "north",
+      "src": "/assets/buildings/temperate/mill-north.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 115.36,
+      "doorY": 144.793,
+      "footprint": [
+        4,
+        4
+      ]
+    },
+    {
+      "key": "temperate:mill:west",
+      "biome": "temperate",
+      "family": "mill",
+      "orientation": "west",
+      "src": "/assets/buildings/temperate/mill-west.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 164.96,
+      "doorY": 156.953,
+      "footprint": [
+        4,
+        4
       ]
     }
   ]

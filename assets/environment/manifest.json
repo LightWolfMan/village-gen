@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "baseTileWidth": 64,
+  "entries": [
+    {
+      "key": "road-street",
+      "type": "road-street",
+      "src": "/assets/environment/road-street.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    },
+    {
+      "key": "road-main",
+      "type": "road-main",
+      "src": "/assets/environment/road-main.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    },
+    {
+      "key": "road-plaza",
+      "type": "road-plaza",
+      "src": "/assets/environment/road-plaza.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    },
+    {
+      "key": "bridge-ew",
+      "type": "bridge-ew",
+      "src": "/assets/environment/bridge-ew.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    },
+    {
+      "key": "bridge-ns",
+      "type": "bridge-ns",
+      "src": "/assets/environment/bridge-ns.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    },
+    {
+      "key": "bridge-cross",
+      "type": "bridge-cross",
+      "src": "/assets/environment/bridge-cross.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    }
+  ]
+}

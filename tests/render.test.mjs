@@ -4,14 +4,18 @@ import assert from 'node:assert/strict';
 import {
   computeDoorPlacement,
   computeBuildingSpritePlacement,
+  computeEnvironmentSpritePlacement,
   canvasToPngBlob,
   computeEavedRoofBase,
   computeRenderBounds,
   computeRoofGeometry,
   getArchitectureProfile,
+  loadEnvironmentArtAssets,
   parseBuildingSpriteManifest,
+  parseEnvironmentSpriteManifest,
   projectPoint,
   resolveBuildingSprite,
+  resolveRoadSpriteType,
 } from '../src/render/renderer.js';
 
 function sampleMap() {
@@ -224,10 +228,16 @@ test('resolver usa perfil, orientacao e aliases raster somente no bioma temperad
     buildingSpriteFixture('civic', 'north'),
     buildingSpriteFixture('farmstead', 'west'),
     buildingSpriteFixture('cottage', 'south'),
+    buildingSpriteFixture('merchant', 'east'),
+    buildingSpriteFixture('artisan', 'south'),
+    buildingSpriteFixture('smithy', 'west'),
   ] });
   assert.equal(resolveBuildingSprite({ architecture: 'manor', orientation: 'north' }, 'temperate', entries)?.family, 'civic');
   assert.equal(resolveBuildingSprite({ architecture: 'longhouse', orientation: 'west' }, 'temperate', entries)?.family, 'farmstead');
   assert.equal(resolveBuildingSprite({ architecture: 'timber-frame', orientation: 'south' }, 'temperate', entries)?.family, 'cottage');
+  assert.equal(resolveBuildingSprite({ type: 'house', zone: 'commercial', architecture: 'timber-frame', orientation: 'east' }, 'temperate', entries)?.family, 'merchant');
+  assert.equal(resolveBuildingSprite({ type: 'house', zone: 'craft', architecture: 'timber-frame', orientation: 'south' }, 'temperate', entries)?.family, 'artisan');
+  assert.equal(resolveBuildingSprite({ type: 'smithy', zone: 'craft', architecture: 'stone-smithy', orientation: 'west' }, 'temperate', entries)?.family, 'smithy');
   assert.equal(resolveBuildingSprite({ architecture: 'manor', orientation: 'south' }, 'temperate', entries), null);
   assert.equal(resolveBuildingSprite({ architecture: 'manor', orientation: 'north' }, 'snowy', entries), null);
   assert.equal(resolveBuildingSprite({ architecture: 'tower', orientation: 'north' }, 'temperate', entries), null);
@@ -247,6 +257,58 @@ test('placement raster preserva proporcao, ancora e porta visual', () => {
   assert.equal(reduced.scale, .5);
   assert.equal(reduced.width / reduced.height, sprite.width / sprite.height);
   assert.throws(() => computeBuildingSpritePlacement({}, { footprint: [0, 0] }), /Metadados de sprite invalidos/);
+});
+
+test('manifesto Blender de ambiente filtra entradas invalidas e resolve caminhos', () => {
+  const manifest = {
+    schemaVersion: 1,
+    baseTileWidth: 64,
+    entries: [
+      { key: 'street', type: 'road-street', src: 'temperate/road-street.png', width: 256, height: 128, anchorX: 128, anchorY: 64 },
+      { key: 'bad-type', type: 'waterfall', src: 'bad.png', width: 1, height: 1, anchorX: 0, anchorY: 0 },
+      { key: 'bad-anchor', type: 'road-main', src: 'bad.png', width: 1, height: 1, anchorX: 'none', anchorY: 0 },
+    ],
+  };
+  const entries = parseEnvironmentSpriteManifest(manifest);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].path, '/assets/environment/temperate/road-street.png');
+  assert.equal(entries[0].baseTileWidth, 64);
+  assert.ok(Object.isFrozen(entries));
+  assert.ok(Object.isFrozen(entries[0]));
+  assert.deepEqual(parseEnvironmentSpriteManifest({ ...manifest, schemaVersion: 2 }), []);
+  assert.deepEqual(parseEnvironmentSpriteManifest({ ...manifest, baseTileWidth: 0 }), []);
+});
+
+test('vias e pontes escolhem a familia visual correspondente', () => {
+  assert.equal(resolveRoadSpriteType({ kind: 'street', bridge: false }), 'road-street');
+  assert.equal(resolveRoadSpriteType({ kind: 'main' }), 'road-main');
+  assert.equal(resolveRoadSpriteType({ kind: 'plaza' }), 'road-plaza');
+  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: 'ew' }), 'bridge-ew');
+  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: 'ns' }), 'bridge-ns');
+  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: 'cross' }), 'bridge-cross');
+  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: null }), 'bridge-cross');
+});
+
+test('placement de ambiente ancora no centro e escala por tileWidth base', () => {
+  const [sprite] = parseEnvironmentSpriteManifest({
+    schemaVersion: 1,
+    baseTileWidth: 64,
+    entries: [{ key: 'bridge-ew', type: 'bridge-ew', src: 'bridge-ew.png', width: 320, height: 192, anchorX: 160, anchorY: 128 }],
+  });
+  const placement = computeEnvironmentSpritePlacement({ x: 3, y: 1 }, sprite, { tileWidth: 32, tileHeight: 16, heightStep: 6, level: 2 });
+  assert.equal(placement.scale, .5);
+  assert.equal(placement.width, 160);
+  assert.equal(placement.height, 96);
+  assert.deepEqual(placement.center, projectPoint(3, 1, 2));
+  assert.equal(placement.x + sprite.anchorX * placement.scale, placement.center.x);
+  assert.equal(placement.y + sprite.anchorY * placement.scale, placement.center.y);
+  assert.ok(Object.isFrozen(placement));
+  assert.throws(() => computeEnvironmentSpritePlacement({}, { width: 0 }), /Metadados de sprite de ambiente invalidos/);
+});
+
+test('loader de ambiente tolera manifesto ausente sem remover o fallback', async () => {
+  const loaded = await loadEnvironmentArtAssets('://manifesto-inexistente');
+  assert.equal(typeof loaded, 'object');
 });
 
 test('bounds incluem sprite grande e continuam puros quando o bitmap falta', () => {

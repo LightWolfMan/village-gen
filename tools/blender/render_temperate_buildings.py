@@ -148,7 +148,7 @@ def build_cottage(mats):
     base, wall = common_shell("Cottage", width, depth, 1, mats["plaster"], mats["red_roof"], mats, 1.05)
     timber_frame(width, depth, base, wall, mats)
     box("CottageChimney", (0.36, 0.38, 1.4), (-0.82, -0.2, base + wall + 0.72), mats["brick"], 0.035)
-    return (3, 2), (0, depth / 2, 0)
+    return (3, 2), (width * 0.19, depth / 2, 0)
 
 
 def build_townhouse(mats):
@@ -195,6 +195,142 @@ def build_farmstead(mats):
     for x in (-0.6, 1.5):
         box("PorchPost", (0.1, 0.1, 1.22), (x, depth / 2 + 0.72, 0.72), mats["dark_wood"], 0.02)
     return (4, 3), (width * 0.19, depth / 2, 0)
+
+
+def hanging_sign(name, x, y, z, mats, symbol=False):
+    box(f"{name}Arm", (0.62, 0.08, 0.08), (x, y, z + 0.34), mats["dark_wood"], 0.018)
+    box(f"{name}Chain", (0.035, 0.035, 0.38), (x + 0.24, y, z + 0.14), mats["iron"], 0.008)
+    board = box(f"{name}Board", (0.5, 0.09, 0.42), (x + 0.24, y, z - 0.12), mats["sign"], 0.045)
+    if symbol:
+        south_detail(f"{name}Mark", x + 0.24, y + 0.052, z - 0.12, 0.22, 0.10, mats["brass"], 0.025)
+    return board
+
+
+def barrel(name, x, y, mats, scale=1.0):
+    value = cylinder(name, 0.23 * scale, 0.52 * scale, (x, y, 0.30 * scale), mats["wood"], 16)
+    cylinder(f"{name}BandA", 0.238 * scale, 0.035, (x, y, 0.14 * scale), mats["iron"], 16)
+    cylinder(f"{name}BandB", 0.238 * scale, 0.035, (x, y, 0.44 * scale), mats["iron"], 16)
+    return value
+
+
+def crate(name, x, y, z, mats, scale=1.0):
+    box(name, (0.55 * scale, 0.5 * scale, 0.45 * scale), (x, y, z + 0.225 * scale), mats["wood"], 0.025)
+    box(f"{name}Band", (0.58 * scale, 0.08, 0.10), (x, y + 0.255 * scale, z + 0.23 * scale), mats["dark_wood"], 0.012)
+
+
+def build_inn(mats):
+    width, depth = 4.6, 3.4
+    base, wall = common_shell("Inn", width, depth, 2, mats["cream"], mats["red_roof"], mats, 1.14)
+    timber_frame(width, depth, base, wall, mats)
+    annex = box("InnStable", (1.55, 2.45, 1.28), (-width / 2 - 0.62, -0.25, 0.28 + 0.64), mats["wood"], 0.04)
+    annex_roof = roof("InnStableRoof", 1.75, 2.65, 1.56, 0.66, mats["brown_roof"], 0.12)
+    annex_roof.location.x = -width / 2 - 0.62
+    annex.location.x = -width / 2 - 0.62
+    hanging_sign("InnSign", width * 0.36, depth / 2 + 0.14, base + 1.38, mats, True)
+    barrel("InnBarrelA", -0.65, depth / 2 + 0.43, mats, 0.9)
+    barrel("InnBarrelB", -0.18, depth / 2 + 0.48, mats, 0.72)
+    return (5, 4), (width * 0.19, depth / 2, 0)
+
+
+def striped_awning(name, width, y, z, mats):
+    panels = 7
+    panel_width = width / panels
+    for index in range(panels):
+        x = -width / 2 + panel_width * (index + 0.5)
+        color = mats["cloth_red"] if index % 2 == 0 else mats["cloth_cream"]
+        box(f"{name}Panel{index}", (panel_width + 0.02, 0.86, 0.075), (x, y, z), color, 0.015, (math.radians(13), 0, 0))
+
+
+def build_shop(mats):
+    width, depth = 3.7, 2.75
+    base, wall = common_shell("Shop", width, depth, 2, mats["plaster"], mats["red_roof"], mats, 0.95)
+    timber_frame(width, depth, base, wall, mats)
+    south_detail("ShopWindowFrame", -0.72, depth / 2 + 0.08, base + 0.82, 1.15, 1.05, mats["dark_wood"], 0.12)
+    south_detail("ShopDisplay", -0.72, depth / 2 + 0.15, base + 0.82, 0.94, 0.83, mats["glass"], 0.04)
+    striped_awning("ShopAwning", 2.25, depth / 2 + 0.43, base + 1.52, mats)
+    crate("ShopCrateA", -1.15, depth / 2 + 0.56, 0, mats, 0.75)
+    crate("ShopCrateB", -0.62, depth / 2 + 0.62, 0, mats, 0.62)
+    hanging_sign("ShopSign", width * 0.34, depth / 2 + 0.14, base + 1.3, mats, True)
+    return (4, 3), (width * 0.19, depth / 2, 0)
+
+
+def build_merchant(mats):
+    width, depth = 3.5, 2.55
+    base, wall = common_shell("Merchant", width, depth, 2, mats["cream"], mats["slate"], mats, 0.95)
+    timber_frame(width, depth, base, wall, mats)
+    south_detail("MerchantStorefrontFrame", -0.68, depth / 2 + 0.08, base + 0.82, 1.2, 1.08, mats["dark_wood"], 0.12)
+    south_detail("MerchantStorefront", -0.68, depth / 2 + 0.15, base + 0.82, 0.98, 0.86, mats["glass"], 0.04)
+    box("MerchantBalcony", (2.35, 0.62, 0.13), (-0.15, depth / 2 + 0.30, base + 1.62), mats["wood"], 0.025)
+    for x in (-1.1, -0.35, 0.4, 1.0):
+        box("MerchantRail", (0.07, 0.07, 0.48), (x, depth / 2 + 0.57, base + 1.88), mats["dark_wood"], 0.012)
+    box("MerchantTopRail", (2.35, 0.08, 0.08), (-0.15, depth / 2 + 0.57, base + 2.1), mats["dark_wood"], 0.012)
+    hanging_sign("MerchantSign", width * 0.35, depth / 2 + 0.14, base + 1.25, mats, True)
+    return (4, 3), (width * 0.19, depth / 2, 0)
+
+
+def build_artisan(mats):
+    width, depth = 3.9, 2.9
+    base, wall = common_shell("Artisan", width, depth, 1, mats["fieldstone"], mats["brown_roof"], mats, 0.85)
+    timber_frame(width, depth, base, wall, mats)
+    box("ArtisanLeanTo", (2.1, 0.92, 0.12), (-0.55, depth / 2 + 0.45, base + 1.26), mats["brown_roof"], 0.02, (math.radians(14), 0, 0))
+    box("ArtisanBench", (1.55, 0.45, 0.12), (-0.62, depth / 2 + 0.64, 0.66), mats["wood"], 0.02)
+    for x in (-1.25, 0.0):
+        box("ArtisanBenchLeg", (0.1, 0.1, 0.58), (x, depth / 2 + 0.64, 0.34), mats["dark_wood"], 0.012)
+    crate("ArtisanCrate", -1.50, depth / 2 + 0.58, 0, mats, 0.78)
+    barrel("ArtisanBarrel", 1.58, depth / 2 + 0.54, mats, 0.72)
+    return (4, 3), (width * 0.19, depth / 2, 0)
+
+
+def build_smithy(mats):
+    width, depth = 4.25, 3.2
+    base, wall = common_shell("Smithy", width, depth, 1, mats["dark_stone"], mats["brown_roof"], mats, 0.78)
+    box("SmithyStack", (0.72, 0.76, 2.25), (-1.18, -0.35, base + wall + 0.55), mats["brick"], 0.045)
+    box("SmithyCanopy", (2.45, 1.12, 0.13), (0.35, depth / 2 + 0.52, base + 1.42), mats["red_roof"], 0.025, (math.radians(12), 0, 0))
+    for x in (-0.72, 1.42):
+        box("SmithyPost", (0.11, 0.11, 1.36), (x, depth / 2 + 0.92, 0.72), mats["dark_wood"], 0.018)
+    box("SmithyForge", (0.9, 0.64, 0.68), (-0.22, depth / 2 + 0.66, 0.39), mats["dark_stone"], 0.035)
+    box("SmithyEmber", (0.65, 0.42, 0.08), (-0.22, depth / 2 + 0.67, 0.76), mats["ember"], 0.01)
+    box("AnvilBase", (0.18, 0.18, 0.48), (-1.48, depth / 2 + 0.76, 0.28), mats["iron"], 0.018)
+    box("AnvilTop", (0.65, 0.22, 0.18), (-1.48, depth / 2 + 0.76, 0.57), mats["iron"], 0.025)
+    return (4, 3), (width * 0.19, depth / 2, 0)
+
+
+def build_market(mats):
+    width, depth = 4.8, 3.7
+    foundation_h = 0.18
+    box("MarketFoundation", (width + 0.1, depth + 0.1, foundation_h), (0, 0, foundation_h / 2), mats["light_stone"], 0.035)
+    eave = 2.15
+    roof("MarketRoof", width, depth, eave, 1.05, mats["red_roof"], 0.28)
+    for x in (-width / 2 + 0.26, 0, width / 2 - 0.26):
+        box("MarketBackPost", (0.16, 0.16, eave), (x, -depth / 2 + 0.24, eave / 2), mats["dark_wood"], 0.02)
+    for x in (-width / 2 + 0.26, width / 2 - 0.26):
+        box("MarketFrontPost", (0.16, 0.16, eave), (x, depth / 2 - 0.24, eave / 2), mats["dark_wood"], 0.02)
+    for x in (-1.35, 1.35):
+        box("MarketCounter", (1.02, 0.58, 0.16), (x, depth / 2 + 0.05, 0.78), mats["wood"], 0.02)
+        box("MarketCounterFront", (1.02, 0.12, 0.62), (x, depth / 2 + 0.30, 0.43), mats["cloth_red"] if x < 0 else mats["cloth_cream"], 0.018)
+    crate("MarketCrateA", -1.55, depth / 2 + 0.64, 0, mats, 0.62)
+    crate("MarketCrateB", 1.52, depth / 2 + 0.62, 0, mats, 0.68)
+    return (5, 4), (0, depth / 2, 0)
+
+
+def build_mill(mats):
+    width, depth = 4.0, 3.1
+    base, wall = common_shell("Mill", width, depth, 2, mats["fieldstone"], mats["brown_roof"], mats, 1.0)
+    timber_frame(width, depth, base, wall, mats)
+    hub = Vector((width / 2 + 0.36, -0.22, 1.25))
+    wheel = cylinder("MillWheel", 1.05, 0.20, hub, mats["dark_wood"], 24)
+    wheel.rotation_euler.y = math.pi / 2
+    for angle in range(0, 360, 45):
+        radians = math.radians(angle)
+        center_y = hub.y + math.cos(radians) * 0.47
+        center_z = hub.z + math.sin(radians) * 0.47
+        spoke = box("MillSpoke", (0.24, 1.82, 0.10), (hub.x + 0.12, center_y, center_z), mats["wood"], 0.012)
+        spoke.rotation_euler.x = radians
+    cylinder("MillAxle", 0.16, 0.58, hub, mats["iron"], 16).rotation_euler.y = math.pi / 2
+    hanging_sign("MillSign", width * 0.37, depth / 2 + 0.14, base + 1.30, mats, True)
+    crate("MillGrainA", -1.48, depth / 2 + 0.52, 0, mats, 0.74)
+    crate("MillGrainB", -0.98, depth / 2 + 0.58, 0, mats, 0.58)
+    return (4, 4), (width * 0.19, depth / 2, 0)
 
 
 def look_at(obj, target):
@@ -278,6 +414,11 @@ def palette():
         "brick": material("Chimney brick", (0.40, 0.16, 0.10, 1)),
         "glass": material("Blue glass", (0.11, 0.31, 0.37, 1), 0.25, 0.05),
         "brass": material("Warm brass", (0.72, 0.49, 0.12, 1), 0.28, 0.65),
+        "iron": material("Forged iron", (0.08, 0.09, 0.085, 1), 0.34, 0.72),
+        "sign": material("Painted sign", (0.34, 0.12, 0.065, 1)),
+        "cloth_red": material("Market red cloth", (0.52, 0.08, 0.055, 1)),
+        "cloth_cream": material("Market cream cloth", (0.82, 0.66, 0.40, 1)),
+        "ember": material("Forge ember", (1.0, 0.18, 0.025, 1), 0.42),
     }
 
 
@@ -305,6 +446,13 @@ def main():
         "workshop": build_workshop,
         "civic": build_civic,
         "farmstead": build_farmstead,
+        "inn": build_inn,
+        "shop": build_shop,
+        "merchant": build_merchant,
+        "artisan": build_artisan,
+        "smithy": build_smithy,
+        "market": build_market,
+        "mill": build_mill,
     }
     entries = []
     for family, builder in builders.items():
@@ -349,4 +497,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

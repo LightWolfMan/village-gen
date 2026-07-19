@@ -105,6 +105,8 @@ const ART_MANIFEST = Object.freeze({
   willow: '/assets/props/swamp-willow.png',
   'swamp-willow': '/assets/props/swamp-willow.png',
   rock: '/assets/props/rock.png',
+  bush: '/assets/props/bush.png',
+  reeds: '/assets/props/reeds.png',
   well: '/assets/props/well.png',
   cart: '/assets/props/cart.png',
   haystack: '/assets/props/haystack.png',
@@ -112,8 +114,17 @@ const ART_MANIFEST = Object.freeze({
 
 const ART = new Map();
 const BUILDING_ART = new Map();
+const ENVIRONMENT_ART = new Map();
 
-const BUILDING_SPRITE_FAMILIES = new Set(['cottage', 'townhouse', 'workshop', 'civic', 'farmstead']);
+const ENVIRONMENT_SPRITE_TYPES = new Set([
+  'road-street', 'road-main', 'road-plaza',
+  'bridge-ew', 'bridge-ns', 'bridge-cross',
+]);
+
+const BUILDING_SPRITE_FAMILIES = new Set([
+  'cottage', 'townhouse', 'workshop', 'civic', 'farmstead',
+  'inn', 'shop', 'merchant', 'artisan', 'smithy', 'market', 'mill',
+]);
 const BUILDING_SPRITE_ORIENTATIONS = new Set(['north', 'east', 'south', 'west']);
 
 function buildingSpriteKey(biome, family, orientation) {
@@ -122,6 +133,10 @@ function buildingSpriteKey(biome, family, orientation) {
 
 function normalizedBuildingSpriteFamily(building, biome) {
   if (biome !== 'temperate') return null;
+  const type = String(building?.type ?? 'house').toLowerCase();
+  if (['inn', 'shop', 'smithy', 'market', 'mill'].includes(type)) return type;
+  if (type === 'house' && building?.zone === 'commercial') return 'merchant';
+  if (type === 'house' && building?.zone === 'craft') return 'artisan';
   const profile = getArchitectureProfile(building?.architecture, building?.type);
   const family = profile.key === 'manor' ? 'civic' : profile.key === 'longhouse' ? 'farmstead' : profile.key;
   return BUILDING_SPRITE_FAMILIES.has(family) ? family : null;
@@ -156,6 +171,69 @@ export function parseBuildingSpriteManifest(manifest, basePath = '/assets/buildi
   const source = Array.isArray(manifest) ? manifest : manifest?.sprites ?? manifest?.entries ?? manifest?.buildings;
   if (!Array.isArray(source)) return Object.freeze([]);
   return Object.freeze(source.map((entry) => normalizedBuildingSpriteEntry(entry, basePath)).filter(Boolean));
+}
+
+function normalizedEnvironmentSpriteEntry(entry, basePath, baseTileWidth) {
+  if (!entry || typeof entry !== 'object') return null;
+  const key = String(entry.key ?? '').trim();
+  const type = String(entry.type ?? '').toLowerCase().trim();
+  const file = String(entry.src ?? '').trim();
+  const width = positive(entry.width, 0);
+  const height = positive(entry.height, 0);
+  const anchorX = finite(entry.anchorX, NaN);
+  const anchorY = finite(entry.anchorY, NaN);
+  if (!key || !ENVIRONMENT_SPRITE_TYPES.has(type) || !file || !width || !height
+    || !Number.isFinite(anchorX) || !Number.isFinite(anchorY)) return null;
+  const root = String(basePath ?? '/assets/environment').replace(/\/$/, '');
+  const path = /^(?:https?:)?\/\//.test(file) || file.startsWith('/') ? file : `${root}/${file.replace(/^\.\//, '')}`;
+  return Object.freeze({ key, type, file, path, width, height, anchorX, anchorY, baseTileWidth });
+}
+
+/** Normaliza o manifesto de ruas e pontes sem depender de DOM ou bitmaps. */
+export function parseEnvironmentSpriteManifest(manifest, basePath = '/assets/environment') {
+  if (!manifest || Number(manifest.schemaVersion) !== 1 || !Array.isArray(manifest.entries)) return Object.freeze([]);
+  const baseTileWidth = positive(manifest.baseTileWidth, 0);
+  if (!baseTileWidth) return Object.freeze([]);
+  return Object.freeze(manifest.entries
+    .map((entry) => normalizedEnvironmentSpriteEntry(entry, basePath, baseTileWidth))
+    .filter(Boolean));
+}
+
+/** Traduz o contrato serializavel de uma via para a familia visual Blender. */
+export function resolveRoadSpriteType(road) {
+  if (road?.bridge) {
+    const orientation = String(road.orientation ?? 'cross').toLowerCase();
+    if (orientation === 'ew') return 'bridge-ew';
+    if (orientation === 'ns') return 'bridge-ns';
+    return 'bridge-cross';
+  }
+  if (road?.kind === 'plaza') return 'road-plaza';
+  if (road?.kind === 'main') return 'road-main';
+  return 'road-street';
+}
+
+/** Posiciona um sprite de via pela ancora de solo no centro isometrico do tile. */
+export function computeEnvironmentSpritePlacement(road, sprite, options = {}) {
+  if (!road || !sprite) throw new TypeError('Road e sprite sao obrigatorios.');
+  const metrics = optionsWithDefaults(options);
+  const width = positive(sprite.width, 0);
+  const height = positive(sprite.height, 0);
+  const baseTileWidth = positive(sprite.baseTileWidth, 0);
+  const anchorX = finite(sprite.anchorX, NaN);
+  const anchorY = finite(sprite.anchorY, NaN);
+  if (!width || !height || !baseTileWidth || !Number.isFinite(anchorX) || !Number.isFinite(anchorY)) {
+    throw new TypeError('Metadados de sprite de ambiente invalidos.');
+  }
+  const scale = metrics.tileWidth / baseTileWidth;
+  const center = projectPoint(finite(road.x, 0), finite(road.y, 0), finite(options.level, 0), metrics);
+  return Object.freeze({
+    x: center.x - anchorX * scale,
+    y: center.y - anchorY * scale,
+    width: width * scale,
+    height: height * scale,
+    scale,
+    center: Object.freeze(center),
+  });
 }
 
 /** Resolve a arte raster sem alterar os aliases do renderer procedural. */
@@ -314,10 +392,10 @@ function propMetrics(prop, options) {
   const type = prop.type ?? 'grass-tuft';
   const scale = options.tileWidth / 32;
   const values = {
-    tree: [54, 88], 'temperate-tree': [54, 88], 'snowy-pine': [54, 90], pine: [54, 90],
-    willow: [72, 90], 'swamp-willow': [72, 90], cactus: [36, 58], 'desert-cactus': [36, 58],
-    rock: [34, 25], well: [38, 43], cart: [50, 34], haystack: [38, 37],
-    'dead-tree': [43, 65], bush: [32, 27], fence: [34, 21], garden: [36, 20],
+    tree: [64, 96], 'temperate-tree': [64, 96], 'snowy-pine': [64, 96], pine: [64, 96],
+    willow: [80, 96], 'swamp-willow': [80, 96], cactus: [48, 64], 'desert-cactus': [48, 64],
+    rock: [48, 40], well: [56, 64], cart: [72, 56], haystack: [48, 56],
+    'dead-tree': [43, 65], bush: [48, 40], reeds: [40, 56], fence: [34, 21], garden: [36, 20],
   };
   const [width, height] = values[type] ?? [28, 28];
   return { width: width * scale, height: height * scale };
@@ -535,6 +613,22 @@ function drawZoneTile(ctx, map, x, y, state) {
 
 function drawRoad(ctx, road, map, state) {
   const level = levelAt(map, road.x, road.y);
+  const environmentSprite = ENVIRONMENT_ART.get(resolveRoadSpriteType(road));
+  if (environmentSprite?.image) {
+    try {
+      const placement = computeEnvironmentSpritePlacement(road, environmentSprite, { ...state.metrics, level });
+      ctx.drawImage(
+        environmentSprite.image,
+        Math.round(placement.x + state.metrics.originX),
+        Math.round(placement.y + state.metrics.originY),
+        Math.round(placement.width),
+        Math.round(placement.height),
+      );
+      return;
+    } catch {
+      // Um asset isolado invalido nao remove a via procedural do mapa.
+    }
+  }
   const isBridge = Boolean(road.bridge);
   const shape = diamondAt(road.x, road.y, level, state, isBridge ? 1 : 3, isBridge ? 3 : 0);
   if (isBridge) {
@@ -1210,8 +1304,33 @@ export async function loadBuildingArtAssets(manifestPath = '/assets/buildings/ma
   return Object.fromEntries(BUILDING_ART.entries());
 }
 
-/** Carrega props e predios opcionais antes da primeira renderizacao do mapa. */
-export async function loadArtAssets(basePath = '/assets/props', buildingManifestPath = '/assets/buildings/manifest.json') {
+/** Carrega ruas e pontes opcionais; falhas individuais mantem o desenho procedural. */
+export async function loadEnvironmentArtAssets(manifestPath = '/assets/environment/manifest.json') {
+  if (typeof fetch === 'undefined') return Object.fromEntries(ENVIRONMENT_ART.entries());
+  try {
+    const response = await fetch(manifestPath);
+    if (!response.ok) return Object.fromEntries(ENVIRONMENT_ART.entries());
+    const manifest = await response.json();
+    const slash = String(manifestPath).lastIndexOf('/');
+    const basePath = slash >= 0 ? String(manifestPath).slice(0, slash) : '/assets/environment';
+    const entries = parseEnvironmentSpriteManifest(manifest, basePath);
+    await Promise.all(entries.map(async (entry) => {
+      if (ENVIRONMENT_ART.has(entry.type)) return;
+      const image = await loadImage(entry.path);
+      if (image) ENVIRONMENT_ART.set(entry.type, Object.freeze({ ...entry, image }));
+    }));
+  } catch {
+    // Ausencia do manifesto ou de Image/fetch mantem o renderer autocontido.
+  }
+  return Object.fromEntries(ENVIRONMENT_ART.entries());
+}
+
+/** Carrega props, predios e ambiente opcionais antes da primeira renderizacao do mapa. */
+export async function loadArtAssets(
+  basePath = '/assets/props',
+  buildingManifestPath = '/assets/buildings/manifest.json',
+  environmentManifestPath = '/assets/environment/manifest.json',
+) {
   const entries = Object.entries(ART_MANIFEST);
   const props = Promise.all(entries.map(async ([key, originalPath]) => {
     if (ART.has(key)) return;
@@ -1219,7 +1338,11 @@ export async function loadArtAssets(basePath = '/assets/props', buildingManifest
     const image = await loadImage(`${String(basePath).replace(/\/$/, '')}/${file}`);
     if (image) ART.set(key, image);
   }));
-  await Promise.all([props, loadBuildingArtAssets(buildingManifestPath)]);
+  await Promise.all([
+    props,
+    loadBuildingArtAssets(buildingManifestPath),
+    loadEnvironmentArtAssets(environmentManifestPath),
+  ]);
   return Object.fromEntries(ART.entries());
 }
 
