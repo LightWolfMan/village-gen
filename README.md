@@ -11,7 +11,7 @@ Gere povoados, vilas e cidades inteiras a partir de uma seed — diretamente no 
 ![Canvas](https://img.shields.io/badge/Canvas-2D-E34F26?logo=html5&logoColor=white)
 ![Blender](https://img.shields.io/badge/Arte-Blender_4.5-F5792A?logo=blender&logoColor=white)
 ![Status](https://img.shields.io/badge/status-Village_v3-6C63FF)
-![Licença](https://img.shields.io/badge/licen%C3%A7a-privada-555)
+![Licença](https://img.shields.io/badge/licen%C3%A7a-a_definir-555)
 
 **Determinístico · Offline · Leve · Sem frameworks · Preparado para outros jogos**
 
@@ -70,7 +70,7 @@ npm start
 
 Depois, abra [http://127.0.0.1:4173](http://127.0.0.1:4173) no navegador.
 
-> 🔐 **Repositório privado:** enquanto o projeto permanecer privado, o clone exige que sua conta do GitHub tenha acesso a ele. Uma cópia já clonada continua funcionando offline.
+> 🌍 **Repositório público:** qualquer pessoa pode clonar o projeto sem precisar de acesso especial. Uma cópia já clonada continua funcionando offline.
 
 ## ✅ O que precisa ser instalado?
 
@@ -191,7 +191,7 @@ Consulte [`assets/ART.md`](assets/ART.md), [`assets/buildings/ART.md`](assets/bu
 
 **A porta 4173 já está em uso.** Feche outra instância do gerador que esteja aberta e inicie novamente.
 
-**O clone do GitHub foi recusado.** O repositório ainda é privado. Autentique o Git ou o GitHub CLI com uma conta autorizada.
+**O clone do GitHub falhou.** Confira sua conexão, confirme a URL do repositório e tente novamente.
 
 **Um sprite não apareceu.** O renderer possui fallback procedural, então o mapa continua utilizável. Rode os testes e confira os manifestos de arte para descobrir qual PNG está ausente.
 
@@ -223,7 +223,7 @@ Consulte [`assets/ART.md`](assets/ART.md), [`assets/buildings/ART.md`](assets/bu
 
 ## 🔒 Licença e uso
 
-O repositório está **privado** e ainda não possui uma licença pública definida. O código e os assets atuais são originais deste projeto; nenhum asset proprietário de SimCity, Pokémon, Ninja Adventure ou de outros jogos foi incorporado.
+O repositório está **público**, mas ainda não possui uma licença de reutilização definida. O código e os assets atuais são originais deste projeto; nenhum asset proprietário de SimCity, Pokémon, Ninja Adventure ou de outros jogos foi incorporado.
 
 Se o projeto for aberto ao público futuramente, adicione um arquivo `LICENSE` antes de permitir reutilização ou distribuição externa.
 
