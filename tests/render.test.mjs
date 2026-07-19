@@ -20,7 +20,7 @@ import {
 
 function sampleMap() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     width: 5,
     height: 4,
     biome: 'temperate',
@@ -205,6 +205,7 @@ test('perfis arquitetonicos alteram a silhueta sem quebrar os bounds', () => {
 function buildingSpriteFixture(family = 'civic', orientation = 'south', overrides = {}) {
   return {
     biome: 'temperate', family, orientation, src: `temperate/${family}-${orientation}.png`,
+    variant: 0,
     width: 256, height: 256, anchorX: 128, anchorY: 192, doorX: 128, doorY: 190,
     footprint: [2, 2], ...overrides,
   };
@@ -243,6 +244,15 @@ test('resolver usa perfil, orientacao e aliases raster somente no bioma temperad
   assert.equal(resolveBuildingSprite({ architecture: 'tower', orientation: 'north' }, 'temperate', entries), null);
 });
 
+test('resolver respeita variante declarada e recua somente para variante zero da familia', () => {
+  const entries = parseBuildingSpriteManifest({ entries: [
+    buildingSpriteFixture('cottage', 'south', { variant: 0, src: 'temperate/cottage-v0-south.png' }),
+    buildingSpriteFixture('cottage', 'south', { variant: 2, src: 'temperate/cottage-v2-south.png' }),
+  ] });
+  assert.equal(resolveBuildingSprite({ architecture: 'cottage', orientation: 'south', variant: 2 }, 'temperate', entries)?.variant, 2);
+  assert.equal(resolveBuildingSprite({ architecture: 'cottage', orientation: 'south', variant: 1 }, 'temperate', entries)?.variant, 0);
+});
+
 test('placement raster preserva proporcao, ancora e porta visual', () => {
   const [sprite] = parseBuildingSpriteManifest({ entries: [buildingSpriteFixture('cottage', 'south')] });
   const placement = computeBuildingSpritePlacement({ x: 10, y: 20, width: 4, height: 2, baseLevel: 1 }, sprite);
@@ -261,7 +271,7 @@ test('placement raster preserva proporcao, ancora e porta visual', () => {
 
 test('manifesto Blender de ambiente filtra entradas invalidas e resolve caminhos', () => {
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     baseTileWidth: 64,
     entries: [
       { key: 'street', type: 'road-street', src: 'temperate/road-street.png', width: 256, height: 128, anchorX: 128, anchorY: 64 },
@@ -275,7 +285,7 @@ test('manifesto Blender de ambiente filtra entradas invalidas e resolve caminhos
   assert.equal(entries[0].baseTileWidth, 64);
   assert.ok(Object.isFrozen(entries));
   assert.ok(Object.isFrozen(entries[0]));
-  assert.deepEqual(parseEnvironmentSpriteManifest({ ...manifest, schemaVersion: 2 }), []);
+  assert.deepEqual(parseEnvironmentSpriteManifest({ ...manifest, schemaVersion: 1 }), []);
   assert.deepEqual(parseEnvironmentSpriteManifest({ ...manifest, baseTileWidth: 0 }), []);
 });
 
@@ -283,17 +293,18 @@ test('vias e pontes escolhem a familia visual correspondente', () => {
   assert.equal(resolveRoadSpriteType({ kind: 'street', bridge: false }), 'road-street');
   assert.equal(resolveRoadSpriteType({ kind: 'main' }), 'road-main');
   assert.equal(resolveRoadSpriteType({ kind: 'plaza' }), 'road-plaza');
-  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: 'ew' }), 'bridge-ew');
-  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: 'ns' }), 'bridge-ns');
-  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: 'cross' }), 'bridge-cross');
-  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: null }), 'bridge-cross');
+  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: 'ew', bridgeRole: 'single' }), 'bridge-ew-single');
+  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: 'ns', bridgeRole: 'start' }), 'bridge-ns-start');
+  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: 'ew', bridgeRole: 'post' }), 'bridge-ew-post');
+  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: 'cross', bridgeRole: 'middle' }), null);
+  assert.equal(resolveRoadSpriteType({ bridge: true, orientation: null }), null);
 });
 
 test('placement de ambiente ancora no centro e escala por tileWidth base', () => {
   const [sprite] = parseEnvironmentSpriteManifest({
-    schemaVersion: 1,
+    schemaVersion: 2,
     baseTileWidth: 64,
-    entries: [{ key: 'bridge-ew', type: 'bridge-ew', src: 'bridge-ew.png', width: 320, height: 192, anchorX: 160, anchorY: 128 }],
+    entries: [{ key: 'bridge-ew-single', type: 'bridge-ew-single', src: 'bridge-ew-single.png', width: 320, height: 192, anchorX: 160, anchorY: 128 }],
   });
   const placement = computeEnvironmentSpritePlacement({ x: 3, y: 1 }, sprite, { tileWidth: 32, tileHeight: 16, heightStep: 6, level: 2 });
   assert.equal(placement.scale, .5);
@@ -318,7 +329,7 @@ test('bounds incluem sprite grande e continuam puros quando o bitmap falta', () 
     width: 1024, height: 1024, anchorX: 512, anchorY: 768, doorX: 512, doorY: 760,
   })] });
   const plain = computeRenderBounds(map);
-  const withSprite = computeRenderBounds(map, { buildingSprites: new Map([['temperate:civic:south', sprite]]) });
+  const withSprite = computeRenderBounds(map, { buildingSprites: new Map([['temperate:civic:0:south', sprite]]) });
   assert.ok(withSprite.width > plain.width);
   assert.ok(withSprite.height > plain.height);
   assert.equal(resolveBuildingSprite(map.buildings[0], 'temperate', new Map()), null);

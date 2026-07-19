@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
 
 const root = new URL('../assets/buildings/', import.meta.url);
@@ -52,20 +52,28 @@ function decodeRgba(buffer) {
   return { width, height, pixels };
 }
 
-test('manifesto Blender referencia 48 edificios RGBA transparentes', async () => {
+test('manifesto Blender referencia 112 edificios v3 RGBA transparentes', async () => {
   const manifest = JSON.parse(await readFile(new URL('manifest.json', root), 'utf8'));
-  assert.equal(manifest.schemaVersion, 1);
-  assert.equal(manifest.entries.length, 48);
+  assert.equal(manifest.schemaVersion, 2);
+  assert.equal(manifest.entries.length, 112);
   assert.deepEqual(new Set(manifest.entries.map(({ family }) => family)), new Set([
     'cottage', 'townhouse', 'workshop', 'civic', 'farmstead',
     'inn', 'shop', 'merchant', 'artisan', 'smithy', 'market', 'mill',
   ]));
   assert.deepEqual(new Set(manifest.entries.map(({ orientation }) => orientation)), new Set(['north', 'east', 'south', 'west']));
-  assert.equal(new Set(manifest.entries.map(({ key }) => key)).size, 48);
+  assert.equal(new Set(manifest.entries.map(({ key }) => key)).size, 112);
+  const expectedVariants = new Map([
+    ['cottage', 3], ['townhouse', 3], ['merchant', 3], ['artisan', 3],
+    ['workshop', 2], ['civic', 2], ['farmstead', 2], ['inn', 2],
+    ['shop', 2], ['smithy', 2], ['market', 2], ['mill', 2],
+  ]);
+  for (const [family, count] of expectedVariants) {
+    assert.deepEqual(new Set(manifest.entries.filter((entry) => entry.family === family).map(({ variant }) => variant)), new Set(Array.from({ length: count }, (_, index) => index)));
+  }
 
   let totalBytes = 0;
   for (const entry of manifest.entries) {
-    assert.match(entry.src, /^\/assets\/buildings\/temperate\/[a-z]+-(north|east|south|west)\.png$/);
+    assert.match(entry.src, /^\/assets\/buildings\/temperate\/[a-z]+-v\d+-(north|east|south|west)\.png$/);
     assert.ok(entry.anchorX >= 0 && entry.anchorX <= entry.width && entry.anchorY >= 0 && entry.anchorY <= entry.height);
     assert.ok(entry.doorX >= 0 && entry.doorX <= entry.width && entry.doorY >= 0 && entry.doorY <= entry.height);
     const file = await readFile(new URL(entry.src.split('/').at(-1), new URL('temperate/', root)));
@@ -77,24 +85,36 @@ test('manifesto Blender referencia 48 edificios RGBA transparentes', async () =>
     assert.ok(image.pixels.some((value, index) => index % 4 === 3 && value > 0), `${entry.src} está vazio`);
   }
   assert.ok(totalBytes < 20 * 1024 * 1024, `sprites excederam 20 MiB: ${totalBytes}`);
+
+  for (const family of expectedVariants.keys()) {
+    const variants = manifest.entries.filter((entry) => entry.family === family);
+    for (const variant of new Set(variants.map((entry) => entry.variant))) {
+      const north = variants.find((entry) => entry.variant === variant && entry.orientation === 'north');
+      const east = variants.find((entry) => entry.variant === variant && entry.orientation === 'east');
+      assert.deepEqual(east.footprint, [north.footprint[1], north.footprint[0]], `${family} v${variant} deve rotacionar footprint`);
+    }
+  }
 });
 
-test('manifesto Blender de ambiente referencia seis sprites RGBA transparentes', async () => {
+test('manifesto Blender de ambiente referencia dez pontes continuas e tres vias', async () => {
   const manifest = JSON.parse(await readFile(new URL('manifest.json', environmentRoot), 'utf8'));
-  assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.schemaVersion, 2);
   assert.equal(manifest.baseTileWidth, 64);
-  assert.equal(manifest.entries.length, 6);
+  assert.equal(manifest.entries.length, 13);
   assert.deepEqual(new Set(manifest.entries.map(({ type }) => type)), new Set([
-    'road-street', 'road-main', 'road-plaza', 'bridge-ew', 'bridge-ns', 'bridge-cross',
+    'road-street', 'road-main', 'road-plaza',
+    ...['ew', 'ns'].flatMap((axis) => ['single', 'start', 'middle', 'post', 'end'].map((role) => `bridge-${axis}-${role}`)),
   ]));
   for (const entry of manifest.entries) {
     assert.equal(entry.key, entry.type);
-    assert.match(entry.src, /^\/assets\/environment\/(road-(street|main|plaza)|bridge-(ew|ns|cross))\.png$/);
+    assert.match(entry.src, /^\/assets\/environment\/(road-(street|main|plaza)|bridge-(ew|ns)-(single|start|middle|post|end))\.png$/);
     const image = decodeRgba(await readFile(new URL(entry.src.split('/').at(-1), environmentRoot)));
     assert.deepEqual([image.width, image.height], [128, 128]);
     const alpha = (x, y) => image.pixels[(y * image.width + x) * 4 + 3];
     assert.deepEqual([alpha(0, 0), alpha(127, 0), alpha(0, 127), alpha(127, 127)], [0, 0, 0, 0]);
   }
+  const filenames = await readdir(environmentRoot);
+  assert.equal(filenames.some((name) => ['bridge-ew.png', 'bridge-ns.png', 'bridge-cross.png'].includes(name)), false);
 });
 
 test('props Blender possuem dimensoes contratadas, conteudo e cantos transparentes', async () => {

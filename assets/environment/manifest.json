@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "baseTileWidth": 64,
   "entries": [
     {
@@ -30,27 +30,90 @@
       "anchorY": 76.541
     },
     {
-      "key": "bridge-ew",
-      "type": "bridge-ew",
-      "src": "/assets/environment/bridge-ew.png",
+      "key": "bridge-ew-single",
+      "type": "bridge-ew-single",
+      "src": "/assets/environment/bridge-ew-single.png",
       "width": 128,
       "height": 128,
       "anchorX": 64.0,
       "anchorY": 76.541
     },
     {
-      "key": "bridge-ns",
-      "type": "bridge-ns",
-      "src": "/assets/environment/bridge-ns.png",
+      "key": "bridge-ew-start",
+      "type": "bridge-ew-start",
+      "src": "/assets/environment/bridge-ew-start.png",
       "width": 128,
       "height": 128,
       "anchorX": 64.0,
       "anchorY": 76.541
     },
     {
-      "key": "bridge-cross",
-      "type": "bridge-cross",
-      "src": "/assets/environment/bridge-cross.png",
+      "key": "bridge-ew-middle",
+      "type": "bridge-ew-middle",
+      "src": "/assets/environment/bridge-ew-middle.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    },
+    {
+      "key": "bridge-ew-post",
+      "type": "bridge-ew-post",
+      "src": "/assets/environment/bridge-ew-post.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    },
+    {
+      "key": "bridge-ew-end",
+      "type": "bridge-ew-end",
+      "src": "/assets/environment/bridge-ew-end.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    },
+    {
+      "key": "bridge-ns-single",
+      "type": "bridge-ns-single",
+      "src": "/assets/environment/bridge-ns-single.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    },
+    {
+      "key": "bridge-ns-start",
+      "type": "bridge-ns-start",
+      "src": "/assets/environment/bridge-ns-start.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    },
+    {
+      "key": "bridge-ns-middle",
+      "type": "bridge-ns-middle",
+      "src": "/assets/environment/bridge-ns-middle.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    },
+    {
+      "key": "bridge-ns-post",
+      "type": "bridge-ns-post",
+      "src": "/assets/environment/bridge-ns-post.png",
+      "width": 128,
+      "height": 128,
+      "anchorX": 64.0,
+      "anchorY": 76.541
+    },
+    {
+      "key": "bridge-ns-end",
+      "type": "bridge-ns-end",
+      "src": "/assets/environment/bridge-ns-end.png",
       "width": 128,
       "height": 128,
       "anchorX": 64.0,

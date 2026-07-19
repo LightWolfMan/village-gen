@@ -1,5 +1,5 @@
 /**
- * Renderer isometrico da Village v2.
+ * Renderer isometrico da Village v3.
  *
  * Este modulo nao conhece o gerador: recebe apenas o VillageMap serializavel e
  * pre-renderiza o mundo inteiro em um Canvas 2D. A camera passa a mover uma
@@ -118,7 +118,8 @@ const ENVIRONMENT_ART = new Map();
 
 const ENVIRONMENT_SPRITE_TYPES = new Set([
   'road-street', 'road-main', 'road-plaza',
-  'bridge-ew', 'bridge-ns', 'bridge-cross',
+  ...['ew', 'ns'].flatMap((axis) => ['single', 'start', 'middle', 'post', 'end']
+    .map((role) => `bridge-${axis}-${role}`)),
 ]);
 
 const BUILDING_SPRITE_FAMILIES = new Set([
@@ -127,8 +128,8 @@ const BUILDING_SPRITE_FAMILIES = new Set([
 ]);
 const BUILDING_SPRITE_ORIENTATIONS = new Set(['north', 'east', 'south', 'west']);
 
-function buildingSpriteKey(biome, family, orientation) {
-  return `${biome}:${family}:${orientation}`;
+function buildingSpriteKey(biome, family, variant, orientation) {
+  return `${biome}:${family}:${variant}:${orientation}`;
 }
 
 function normalizedBuildingSpriteFamily(building, biome) {
@@ -147,6 +148,7 @@ function normalizedBuildingSpriteEntry(entry, basePath) {
   const biome = String(entry.biome ?? 'temperate').toLowerCase();
   const family = String(entry.family ?? '').toLowerCase();
   const orientation = String(entry.orientation ?? '').toLowerCase();
+  const variant = Math.max(0, Math.trunc(finite(entry.variant, 0)));
   const width = positive(entry.width, 0);
   const height = positive(entry.height, 0);
   const anchorX = finite(entry.anchorX, NaN);
@@ -163,7 +165,7 @@ function normalizedBuildingSpriteEntry(entry, basePath) {
     || !Number.isFinite(doorX) || !Number.isFinite(doorY) || !footprint.width || !footprint.height || !file) return null;
   const root = String(basePath ?? '/assets/buildings').replace(/\/$/, '');
   const path = /^(?:https?:)?\/\//.test(file) || file.startsWith('/') ? file : `${root}/${file.replace(/^\.\//, '')}`;
-  return Object.freeze({ biome, family, orientation, width, height, anchorX, anchorY, doorX, doorY, footprint: Object.freeze(footprint), file, path });
+  return Object.freeze({ biome, family, variant, orientation, width, height, anchorX, anchorY, doorX, doorY, footprint: Object.freeze(footprint), file, path });
 }
 
 /** Normaliza um manifesto gerado pelo pipeline Blender sem depender de DOM ou bitmaps. */
@@ -191,7 +193,7 @@ function normalizedEnvironmentSpriteEntry(entry, basePath, baseTileWidth) {
 
 /** Normaliza o manifesto de ruas e pontes sem depender de DOM ou bitmaps. */
 export function parseEnvironmentSpriteManifest(manifest, basePath = '/assets/environment') {
-  if (!manifest || Number(manifest.schemaVersion) !== 1 || !Array.isArray(manifest.entries)) return Object.freeze([]);
+  if (!manifest || Number(manifest.schemaVersion) !== 2 || !Array.isArray(manifest.entries)) return Object.freeze([]);
   const baseTileWidth = positive(manifest.baseTileWidth, 0);
   if (!baseTileWidth) return Object.freeze([]);
   return Object.freeze(manifest.entries
@@ -202,10 +204,10 @@ export function parseEnvironmentSpriteManifest(manifest, basePath = '/assets/env
 /** Traduz o contrato serializavel de uma via para a familia visual Blender. */
 export function resolveRoadSpriteType(road) {
   if (road?.bridge) {
-    const orientation = String(road.orientation ?? 'cross').toLowerCase();
-    if (orientation === 'ew') return 'bridge-ew';
-    if (orientation === 'ns') return 'bridge-ns';
-    return 'bridge-cross';
+    const axis = String(road.orientation ?? '').toLowerCase();
+    const role = String(road.bridgeRole ?? 'middle').toLowerCase();
+    if (!['ew', 'ns'].includes(axis) || !['single', 'start', 'middle', 'post', 'end'].includes(role)) return null;
+    return `bridge-${axis}-${role}`;
   }
   if (road?.kind === 'plaza') return 'road-plaza';
   if (road?.kind === 'main') return 'road-main';
@@ -242,10 +244,14 @@ export function resolveBuildingSprite(building, biome = 'temperate', sprites = B
   const family = normalizedBuildingSpriteFamily(building, normalizedBiome);
   const orientation = String(building?.orientation ?? building?.facing ?? 'south').toLowerCase();
   if (!family || !BUILDING_SPRITE_ORIENTATIONS.has(orientation)) return null;
-  const key = buildingSpriteKey(normalizedBiome, family, orientation);
-  if (sprites instanceof Map) return sprites.get(key) ?? null;
+  const variant = Math.max(0, Math.trunc(finite(building?.variant, 0)));
+  const key = buildingSpriteKey(normalizedBiome, family, variant, orientation);
+  const fallbackKey = buildingSpriteKey(normalizedBiome, family, 0, orientation);
+  if (sprites instanceof Map) return sprites.get(key) ?? sprites.get(fallbackKey) ?? null;
   const entries = Array.isArray(sprites) ? sprites : parseBuildingSpriteManifest(sprites);
-  return entries.find((entry) => buildingSpriteKey(entry.biome, entry.family, entry.orientation) === key) ?? null;
+  return entries.find((entry) => buildingSpriteKey(entry.biome, entry.family, entry.variant, entry.orientation) === key)
+    ?? entries.find((entry) => buildingSpriteKey(entry.biome, entry.family, entry.variant, entry.orientation) === fallbackKey)
+    ?? null;
 }
 
 /** Calcula escala uniforme, ancora no centro do lote e coordenada visual da porta. */
@@ -634,7 +640,7 @@ function drawRoad(ctx, road, map, state) {
   if (isBridge) {
     polygon(ctx, '#765034', [shape.north, shape.east, { x: shape.south.x, y: shape.south.y + 3 }, { x: shape.west.x, y: shape.west.y + 3 }], '#3d2b20');
     polygon(ctx, '#a77843', [shape.north, shape.east, shape.south, shape.west], '#4d3525');
-    const orientation = road.orientation ?? 'cross';
+    const orientation = road.orientation ?? 'ew';
     const count = 5;
     for (let index = 1; index < count; index += 1) {
       const t = index / count;
@@ -648,8 +654,30 @@ function drawRoad(ctx, road, map, state) {
         line(ctx, 'rgba(69,42,25,.55)', 1, [a, b]);
       }
     }
-    line(ctx, '#d3a25d', 2, [shape.west, shape.north, shape.east]);
-    line(ctx, '#4b3323', 1, [{ x: shape.west.x, y: shape.west.y - 3 }, { x: shape.north.x, y: shape.north.y - 3 }, { x: shape.east.x, y: shape.east.y - 3 }]);
+    const rails = orientation === 'ns'
+      ? [[shape.north, shape.west], [shape.east, shape.south]]
+      : [[shape.north, shape.east], [shape.west, shape.south]];
+    for (const rail of rails) {
+      line(ctx, '#4b3323', 2, rail.map((point) => ({ x: point.x, y: point.y - 3 })));
+    }
+    const role = road.bridgeRole ?? 'middle';
+    const heads = role === 'single' ? [0, 1] : role === 'start' ? [0] : role === 'end' ? [1] : [];
+    const ends = orientation === 'ns'
+      ? [[shape.north, shape.east], [shape.west, shape.south]]
+      : [[shape.north, shape.west], [shape.east, shape.south]];
+    for (const head of heads) {
+      for (const point of ends[head]) {
+        ctx.fillStyle = '#5a3a25';
+        ctx.fillRect(Math.round(point.x - 1), Math.round(point.y - 6), 3, 6);
+      }
+    }
+    if (role === 'post') {
+      for (const rail of rails) {
+        const point = mixPoint(rail[0], rail[1]);
+        ctx.fillStyle = '#5a3a25';
+        ctx.fillRect(Math.round(point.x - 1), Math.round(point.y - 6), 3, 6);
+      }
+    }
     return;
   }
   polygon(ctx, road.kind === 'plaza' ? '#b5a071' : '#947958', [shape.north, shape.east, shape.south, shape.west], 'rgba(65,49,36,.30)');
@@ -1293,7 +1321,7 @@ export async function loadBuildingArtAssets(manifestPath = '/assets/buildings/ma
     const basePath = slash >= 0 ? String(manifestPath).slice(0, slash) : '/assets/buildings';
     const entries = parseBuildingSpriteManifest(manifest, basePath);
     await Promise.all(entries.map(async (entry) => {
-      const key = buildingSpriteKey(entry.biome, entry.family, entry.orientation);
+      const key = buildingSpriteKey(entry.biome, entry.family, entry.variant, entry.orientation);
       if (BUILDING_ART.has(key)) return;
       const image = await loadImage(entry.path);
       if (image) BUILDING_ART.set(key, Object.freeze({ ...entry, image }));

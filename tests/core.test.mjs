@@ -6,11 +6,11 @@ import { BIOMES, DEFAULT_SETTINGS, generateVillage, heightAt, terrainAt, validat
 
 const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
-test("contrato v2 é limpo, serializável e determinístico", () => {
+test("contrato v3 é limpo, serializável e determinístico", () => {
   const first = generateVillage("vale-do-sol");
   const second = generateVillage("vale-do-sol");
   assert.equal(digest(first), digest(second));
-  assert.equal(first.schemaVersion, 2);
+  assert.equal(first.schemaVersion, 3);
   assert.deepEqual(first.settings, DEFAULT_SETTINGS);
   assert.equal(first.width, 96);
   assert.equal(first.height, 96);
@@ -149,8 +149,16 @@ test("rios e águas cruzados por ruas geram pontes orientadas", () => {
       assert.equal(road.bridge, terrainAt(map, road.x, road.y) === "water");
       if (road.bridge) {
         bridges += 1;
-        assert.ok(["ns", "ew", "cross"].includes(road.orientation));
+        assert.ok(["ns", "ew"].includes(road.orientation));
+        assert.equal(road.connections, road.orientation === "ew" ? 10 : 5);
+        assert.equal(typeof road.bridgeSpanId, "string");
+        assert.ok(["single", "start", "middle", "post", "end"].includes(road.bridgeRole));
       } else assert.equal(road.orientation, null);
+    }
+    for (const span of map.bridgeSpans) {
+      assert.equal(span.length, span.roadIndexes.length);
+      assert.notEqual(terrainAt(map, span.entry.x, span.entry.y), "water");
+      assert.notEqual(terrainAt(map, span.exit.x, span.exit.y), "water");
     }
   }
   assert.ok(bridges > 0);
@@ -203,7 +211,10 @@ test("portas são entradas terrestres, exclusivas e coerentes com a fachada", ()
     assert.equal(doors.has(`${door.x},${door.y}`), false);
     doors.add(`${door.x},${door.y}`);
   }
-  assert.ok(map.buildings.filter(({ entranceVisible }) => entranceVisible).length > map.buildings.length * 0.7);
+  for (const orientation of ["north", "east", "south", "west"]) {
+    const ratio = map.buildings.filter((building) => building.orientation === orientation).length / map.buildings.length;
+    assert.ok(ratio >= 0.15 && ratio <= 0.35, `${orientation} fora da faixa: ${ratio}`);
+  }
   for (const prop of map.props) assert.equal(doors.has(`${prop.x},${prop.y}`), false);
 });
 

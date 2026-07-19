@@ -33,40 +33,59 @@ class MinHeap {
   get length() { return this.items.length; }
 }
 
-export function findPath(width, height, start, goal, costAt) {
-  const total = width * height;
-  const cameFrom = new Int32Array(total).fill(-1);
-  const scores = new Float64Array(total).fill(Number.POSITIVE_INFINITY);
+export function findPath(width, height, start, goal, costAt, options = {}) {
   const startIndex = start.y * width + start.x;
   const goalIndex = goal.y * width + goal.x;
-  scores[startIndex] = 0;
+  // On a straight water span, waterRun is determined by cell + heading, so it
+  // does not need to multiply the A* state space.
+  const encodeState = (index, direction) => index * 5 + direction + 1;
+  const decodeIndex = (stateKey) => Math.floor(stateKey / 5);
+  const startKey = encodeState(startIndex, -1);
+  const stateCount = width * height * 5;
+  const cameFrom = new Int32Array(stateCount).fill(-1);
+  const scores = new Float64Array(stateCount).fill(Number.POSITIVE_INFINITY);
+  scores[startKey] = 0;
   const heap = new MinHeap();
-  heap.push({ index: startIndex, score: Math.abs(goal.x - start.x) + Math.abs(goal.y - start.y) });
+  const heuristicWeight = options.heuristicWeight ?? 1;
+  heap.push({ index: startIndex, direction: -1, waterRun: 0, stateKey: startKey, cost: 0, score: (Math.abs(goal.x - start.x) + Math.abs(goal.y - start.y)) * heuristicWeight });
   const directions = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+  let goalKey = startIndex === goalIndex ? startKey : null;
   while (heap.length) {
     const current = heap.pop();
-    if (current.index === goalIndex) break;
+    if (current.cost !== scores[current.stateKey]) continue;
+    if (current.index === goalIndex) { goalKey = current.stateKey; break; }
     const x = current.index % width;
     const y = Math.floor(current.index / width);
-    for (const [dx, dy] of directions) {
+    const currentWater = options.isWater?.(x, y) ?? false;
+    for (let direction = 0; direction < directions.length; direction += 1) {
+      const [dx, dy] = directions[direction];
       const nx = x + dx;
       const ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      const nextWater = options.isWater?.(nx, ny) ?? false;
+      if (currentWater && current.direction >= 0 && direction !== current.direction) continue;
+      const axis = direction % 2 === 0 ? "ew" : "ns";
+      if (nextWater && options.bridgeAxisAt?.(nx, ny) && options.bridgeAxisAt(nx, ny) !== axis) continue;
+      const waterRun = nextWater ? (currentWater ? current.waterRun + 1 : 1) : 0;
+      if (nextWater && options.maxWaterRun && waterRun > options.maxWaterRun) continue;
       const next = ny * width + nx;
-      const candidate = scores[current.index] + costAt(nx, ny, x, y);
-      if (candidate >= scores[next]) continue;
-      scores[next] = candidate;
-      cameFrom[next] = current.index;
-      heap.push({ index: next, score: candidate + Math.abs(goal.x - nx) + Math.abs(goal.y - ny) });
+      const stateKey = encodeState(next, direction);
+      const turnCost = current.direction >= 0 && current.direction !== direction ? (options.turnPenalty ?? 0) : 0;
+      const candidate = scores[current.stateKey] + costAt(nx, ny, x, y) + turnCost;
+      if (candidate >= scores[stateKey]) continue;
+      scores[stateKey] = candidate;
+      cameFrom[stateKey] = current.stateKey;
+      heap.push({ index: next, direction, waterRun, stateKey, cost: candidate, score: candidate + (Math.abs(goal.x - nx) + Math.abs(goal.y - ny)) * heuristicWeight });
     }
   }
-  if (goalIndex !== startIndex && cameFrom[goalIndex] < 0) return [];
+  if (goalKey === null) return [];
   const path = [];
-  let cursor = goalIndex;
-  while (cursor >= 0) {
+  let cursorKey = goalKey;
+  while (cursorKey >= 0) {
+    const cursor = decodeIndex(cursorKey);
     path.push({ x: cursor % width, y: Math.floor(cursor / width) });
-    if (cursor === startIndex) break;
-    cursor = cameFrom[cursor];
+    if (cursorKey === startKey) break;
+    cursorKey = cameFrom[cursorKey];
   }
   return path.reverse();
 }

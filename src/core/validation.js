@@ -7,23 +7,71 @@ const TYPE_ZONES = {
   smithy: ["craft"], mill: ["craft", "agricultural"],
   hall: ["civic"], chapel: ["civic"], tower: ["civic"],
 };
+const ROAD_CONNECTIONS = [
+  { bit: 1, opposite: 4, dx: 0, dy: -1 },
+  { bit: 2, opposite: 8, dx: 1, dy: 0 },
+  { bit: 4, opposite: 1, dx: 0, dy: 1 },
+  { bit: 8, opposite: 2, dx: -1, dy: 0 },
+];
 
-function connectedRoads(map, roadSet, errors) {
+function connectedRoads(map, roadByKey, errors) {
   const start = map.roads.find((road) => road.kind === "plaza") || map.roads[0];
   if (!start) { errors.push("rede viária vazia"); return; }
   const reached = new Set([keyOf(start.x, start.y)]);
   const queue = [start];
   for (let cursor = 0; cursor < queue.length; cursor += 1) {
     const point = queue[cursor];
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    for (const { bit, dx, dy } of ROAD_CONNECTIONS) {
+      if (!(point.connections & bit)) continue;
       const key = keyOf(point.x + dx, point.y + dy);
-      if (roadSet.has(key) && !reached.has(key)) {
+      const neighbor = roadByKey.get(key);
+      if (neighbor && !reached.has(key)) {
         reached.add(key);
-        queue.push({ x: point.x + dx, y: point.y + dy });
+        queue.push(neighbor);
       }
     }
   }
-  if (reached.size !== roadSet.size) errors.push(`rede viária desconectada: ${roadSet.size - reached.size} tiles`);
+  if (reached.size !== roadByKey.size) errors.push(`rede viária desconectada: ${roadByKey.size - reached.size} tiles`);
+}
+
+function validateBridgeSpans(map, roadByKey, errors) {
+  if (!Array.isArray(map.bridgeSpans)) { errors.push("bridgeSpans ausente"); return; }
+  const spanById = new Map(map.bridgeSpans.map((span) => [span.id, span]));
+  if (spanById.size !== map.bridgeSpans.length) errors.push("IDs de bridgeSpans duplicados");
+  const claimed = new Set();
+  for (const span of map.bridgeSpans) {
+    if (!span || !["ew", "ns"].includes(span.axis) || !Array.isArray(span.roadIndexes) || span.length !== span.roadIndexes.length || span.length < 1) {
+      errors.push(`bridgeSpan inválido: ${span?.id ?? "sem-id"}`);
+      continue;
+    }
+    const roads = span.roadIndexes.map((index) => map.roads[index]);
+    const step = span.axis === "ew" ? [1, 0] : [0, 1];
+    for (let index = 0; index < roads.length; index += 1) {
+      const road = roads[index];
+      const expectedRole = roads.length === 1 ? "single" : index === 0 ? "start" : index === roads.length - 1 ? "end" : index % 3 === 0 ? "post" : "middle";
+      if (!road?.bridge || road.orientation !== span.axis || road.bridgeSpanId !== span.id || road.bridgeIndex !== index || road.bridgeRole !== expectedRole) {
+        errors.push(`metadados de ponte inválidos em ${span.id}:${index}`);
+        continue;
+      }
+      const key = keyOf(road.x, road.y);
+      if (claimed.has(key)) errors.push(`tile de ponte duplicado em spans: ${key}`);
+      claimed.add(key);
+      if (index && (road.x !== roads[index - 1].x + step[0] || road.y !== roads[index - 1].y + step[1])) errors.push(`bridgeSpan não contínuo: ${span.id}`);
+    }
+    const maxLength = roads.some((road) => road?.kind === "main") ? 14 : 8;
+    if (span.length > maxLength) errors.push(`bridgeSpan longo demais: ${span.id}`);
+    const first = roads[0]; const last = roads.at(-1);
+    const expectedEntry = first && { x: first.x - step[0], y: first.y - step[1] };
+    const expectedExit = last && { x: last.x + step[0], y: last.y + step[1] };
+    for (const [label, point, expected] of [["entrada", span.entry, expectedEntry], ["saída", span.exit, expectedExit]]) {
+      const dryRoad = point && roadByKey.get(keyOf(point.x, point.y));
+      if (!point || point.x !== expected?.x || point.y !== expected?.y || !dryRoad || dryRoad.bridge) errors.push(`${label} seca inválida em ${span.id}`);
+    }
+  }
+  for (const road of map.roads) {
+    if (road.bridge && (!road.bridgeSpanId || !spanById.has(road.bridgeSpanId) || !claimed.has(keyOf(road.x, road.y)))) errors.push(`ponte órfã em ${road.x},${road.y}`);
+    if (!road.bridge && (road.bridgeSpanId !== null || road.bridgeRole !== null || road.bridgeIndex !== null)) errors.push(`metadados de ponte em terra em ${road.x},${road.y}`);
+  }
 }
 
 function validateBuildings(map, roadSet, roadByKey, errors) {
@@ -194,25 +242,76 @@ function validateRoadTopology(map, roadSet, errors) {
     errors.push("gridSpec inválido");
     return;
   }
-  const plazaKeys = new Set();
-  for (let y = map.plaza.y; y < map.plaza.y + map.plaza.height; y += 1) for (let x = map.plaza.x; x < map.plaza.x + map.plaza.width; x += 1) plazaKeys.add(keyOf(x, y));
-  for (let x = 1; x < map.width - 1; x += 1) if (!roadSet.has(keyOf(x, spec.centerY))) errors.push(`eixo horizontal incompleto em ${x}`);
-  for (let y = 1; y < map.height - 1; y += 1) if (!roadSet.has(keyOf(spec.centerX, y))) errors.push(`eixo vertical incompleto em ${y}`);
-  const startX = spec.centerX - Math.floor(spec.radius / spec.spacing) * spec.spacing;
-  const startY = spec.centerY - Math.floor(spec.radius / spec.spacing) * spec.spacing;
-  for (const road of map.roads) {
-    if (plazaKeys.has(keyOf(road.x, road.y)) || road.kind === "main") continue;
-    const vertical = road.x >= startX && (road.x - startX) % spec.spacing === 0
-      && road.x <= spec.centerX + spec.radius && road.y >= spec.centerY - spec.radius && road.y <= spec.centerY + spec.radius;
-    const horizontal = road.y >= startY && (road.y - startY) % spec.spacing === 0
-      && road.y <= spec.centerY + spec.radius && road.x >= spec.centerX - spec.radius && road.x <= spec.centerX + spec.radius;
-    if (!vertical && !horizontal) errors.push(`rua não ortogonal à grade em ${road.x},${road.y}`);
+  // The grid is an alignment target. A line may leave its lattice temporarily
+  // to follow a dry shore when no legal straight bridge exists.
+  if (!roadSet.has(keyOf(spec.centerX, spec.centerY))) errors.push("centro da grade sem rua");
+}
+
+function validateUrbanPlan(map, roadByKey, errors) {
+  if (!Array.isArray(map.roadSegments) || !Array.isArray(map.frontages) || !Array.isArray(map.lots)) {
+    errors.push("camadas cadastrais v3 ausentes");
+    return;
+  }
+  const segmentById = new Map();
+  for (const segment of map.roadSegments) {
+    if (!segment?.id || segmentById.has(segment.id)) { errors.push("segmento viário duplicado ou sem id"); continue; }
+    segmentById.set(segment.id, segment);
+    if (!['ew', 'ns'].includes(segment.axis) || !Array.isArray(segment.roadIndexes) || segment.length !== segment.roadIndexes.length) errors.push(`segmento inválido em ${segment.id}`);
+    for (const roadIndex of segment.roadIndexes || []) {
+      const road = map.roads[roadIndex];
+      if (!road || road.bridge || road.kind === "plaza") errors.push(`rua inválida em ${segment.id}`);
+      else {
+        if (road.connections !== (segment.axis === "ew" ? 10 : 5)) errors.push(`curva ou junção incluída em ${segment.id}`);
+        if (!road.segmentIds.includes(segment.id)) errors.push(`ligação reversa ausente em ${segment.id}`);
+      }
+    }
+  }
+  const frontageById = new Map();
+  for (const frontage of map.frontages) {
+    if (!frontage?.id || frontageById.has(frontage.id)) { errors.push("fachada duplicada ou sem id"); continue; }
+    frontageById.set(frontage.id, frontage);
+    const segment = segmentById.get(frontage.segmentId);
+    const validSides = segment?.axis === "ew" ? ["north", "south"] : ["west", "east"];
+    if (!segment || !validSides.includes(frontage.side) || !Array.isArray(frontage.roadIndexes) || frontage.length !== frontage.roadIndexes.length) errors.push(`fachada inválida em ${frontage.id}`);
+    if (!ZONE_TYPES.includes(frontage.zone)) errors.push(`zona de fachada inválida em ${frontage.id}`);
+    for (const roadIndex of frontage.roadIndexes || []) if (!segment?.roadIndexes.includes(roadIndex)) errors.push(`faixa fora do segmento em ${frontage.id}`);
+  }
+  const buildingById = new Map(map.buildings.map((building) => [building.id, building]));
+  const lotById = new Map();
+  const occupiedLots = new Map();
+  for (const lot of map.lots) {
+    if (!lot?.id || lotById.has(lot.id)) { errors.push("lote duplicado ou sem id"); continue; }
+    lotById.set(lot.id, lot);
+    const frontage = frontageById.get(lot.frontageId);
+    const building = buildingById.get(lot.buildingId);
+    if (!frontage || frontage.zone !== lot.zone || !building || building.zone !== lot.zone) errors.push(`vínculos inválidos em ${lot.id}`);
+    if (!Number.isInteger(lot.roadIndex) || !frontage?.roadIndexes.includes(lot.roadIndex)) errors.push(`acesso inválido em ${lot.id}`);
+    if (!Array.isArray(lot.cells) || !lot.cells.length) { errors.push(`células ausentes em ${lot.id}`); continue; }
+    for (const cell of lot.cells) {
+      if (!Number.isInteger(cell.x) || !Number.isInteger(cell.y) || cell.x < 0 || cell.y < 0 || cell.x >= map.width || cell.y >= map.height) {
+        errors.push(`célula fora do mapa em ${lot.id}`); continue;
+      }
+      const key = keyOf(cell.x, cell.y);
+      if (occupiedLots.has(key)) errors.push(`sobreposição entre ${lot.id} e ${occupiedLots.get(key)}`);
+      occupiedLots.set(key, lot.id);
+      if (map.terrain[cell.y * map.width + cell.x] === "water") errors.push(`lote molhado em ${lot.id}`);
+    }
+  }
+  for (const building of map.buildings) {
+    const lot = lotById.get(building.lotId);
+    if (!lot || lot.frontageId !== building.frontageId || lot.buildingId !== building.id) errors.push(`edifício sem lote/fachada em ${building.id}`);
+    const lotCells = new Set((lot?.cells || []).map((cell) => keyOf(cell.x, cell.y)));
+    for (let y = building.y; y < building.y + building.height; y += 1) {
+      for (let x = building.x; x < building.x + building.width; x += 1) if (!lotCells.has(keyOf(x, y))) errors.push(`footprint fora do lote em ${building.id}`);
+    }
+    const accessRoad = roadByKey.get(keyOf(building.door?.x, building.door?.y));
+    if (!accessRoad || accessRoad.bridge || ![5, 10].includes(accessRoad.connections)) errors.push(`porta em curva, junção ou ponte em ${building.id}`);
   }
 }
 
 export function validateVillage(map) {
   const errors = [];
-  if (map.schemaVersion !== 2) errors.push("schemaVersion inválido");
+  if (map.schemaVersion !== 3) errors.push("schemaVersion inválido");
   if (!Number.isInteger(map.width) || map.width !== map.height) errors.push("dimensões inválidas");
   if (!Array.isArray(map.terrain) || map.terrain.length !== map.width * map.height) errors.push("camada de terreno incompleta");
   if (!Array.isArray(map.heightLevel) || map.heightLevel.length !== map.width * map.height) errors.push("camada de altura incompleta");
@@ -225,11 +324,20 @@ export function validateVillage(map) {
   if (roadSet.size !== map.roads.length) errors.push("tiles de estrada duplicados");
   for (const road of map.roads) {
     const water = map.terrain[road.y * map.width + road.x] === "water";
+    if (!Number.isInteger(road.connections) || road.connections < 0 || road.connections > 15) errors.push(`máscara viária inválida em ${road.x},${road.y}`);
+    for (const { bit, opposite, dx, dy } of ROAD_CONNECTIONS) {
+      if (!(road.connections & bit)) continue;
+      const neighbor = roadByKey.get(keyOf(road.x + dx, road.y + dy));
+      if (!neighbor || !(neighbor.connections & opposite)) errors.push(`conexão viária não recíproca em ${road.x},${road.y}`);
+    }
     if (road.bridge !== water) errors.push(`ponte inconsistente em ${road.x},${road.y}`);
-    if (road.bridge && !["ns", "ew", "cross"].includes(road.orientation)) errors.push(`orientação de ponte inválida em ${road.x},${road.y}`);
+    if (road.bridge && !((road.orientation === "ns" && road.connections === 5) || (road.orientation === "ew" && road.connections === 10))) errors.push(`orientação de ponte inválida em ${road.x},${road.y}`);
     if (!road.bridge && road.orientation !== null) errors.push(`estrada terrestre com orientação de ponte em ${road.x},${road.y}`);
+    if (!Array.isArray(road.segmentIds)) errors.push(`segmentIds inválido em ${road.x},${road.y}`);
   }
-  connectedRoads(map, roadSet, errors);
+  validateBridgeSpans(map, roadByKey, errors);
+  validateUrbanPlan(map, roadByKey, errors);
+  connectedRoads(map, roadByKey, errors);
   validateRoadTopology(map, roadSet, errors);
   const buildingValidation = validateBuildings(map, roadSet, roadByKey, errors);
   validateProps(map, roadSet, buildingValidation.expanded, buildingValidation.doorSet, errors);

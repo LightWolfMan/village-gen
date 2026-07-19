@@ -35,13 +35,13 @@ async function startServer() {
   return { child, base: `http://127.0.0.1:${port}` };
 }
 
-test('servidor entrega a aplicação v2 e bloqueia requisições inseguras', async (t) => {
+test('servidor entrega a aplicação v3 e bloqueia requisições inseguras', async (t) => {
   const { child, base } = await startServer();
   t.after(() => child.kill());
 
   const home = await fetch(`${base}/`);
   assert.equal(home.status, 200);
-  assert.match(await home.text(), /Vilarejo II/);
+  assert.match(await home.text(), /Village v3/);
   assert.match(home.headers.get('content-type'), /^text\/html/);
 
   const module = await fetch(`${base}/src/core/index.js`);

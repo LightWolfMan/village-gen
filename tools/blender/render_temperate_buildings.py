@@ -333,6 +333,87 @@ def build_mill(mats):
     return (4, 4), (width * 0.19, depth / 2, 0)
 
 
+def add_architectural_variant(family, variant, footprint, mats):
+    """Adiciona volumes funcionais, nao apenas uma troca de paleta."""
+    if variant == 0:
+        return footprint
+
+    if family == "cottage":
+        box("CottageVariantAnnex", (1.45, 1.7, 1.3), (-1.75, -.18, .72), mats["wood"], .045)
+        annex_roof = roof("CottageVariantAnnexRoof", 1.62, 1.88, 1.37, .62, mats["thatch"], .12)
+        annex_roof.location.x = -1.75
+        if variant == 2:
+            box("CottageVariantPorch", (1.85, .72, .13), (.52, 1.42, .28), mats["wood"], .025)
+            box("CottageVariantPorchRoof", (2.0, .82, .12), (.52, 1.42, 1.35), mats["red_roof"], .025, (math.radians(12), 0, 0))
+        return (4, 3)
+    if family == "townhouse":
+        box("TownhouseVariantWing", (1.35, 2.05, 2.35), (-2.12, -.2, 1.35), mats["cream"], .045)
+        wing_roof = roof("TownhouseVariantWingRoof", 1.5, 2.2, 2.52, .72, mats["slate"], .12)
+        wing_roof.location.x = -2.12
+        if variant == 2:
+            box("TownhouseVariantGallery", (2.1, .68, .14), (.55, 1.68, 1.72), mats["wood"], .02)
+            for x in (-.4, .35, 1.1):
+                box("TownhouseGalleryPost", (.08, .08, 1.65), (x, 1.94, .88), mats["dark_wood"], .012)
+        return (5, 4)
+    if family == "merchant":
+        box("MerchantVariantBay", (1.18, .58, 1.52), (-1.12, 1.55, 1.0), mats["cream"], .035)
+        south_detail("MerchantVariantGlass", -1.12, 1.86, 1.0, .82, 1.08, mats["glass"], .04)
+        if variant == 2:
+            striped_awning("MerchantVariantAwning", 3.1, 1.62, 1.74, mats)
+            box("MerchantVariantWarehouse", (1.25, 1.9, 1.48), (2.0, -.25, .86), mats["fieldstone"], .04)
+        return (5, 4)
+    if family == "artisan":
+        box("ArtisanVariantShed", (1.65, 2.25, 1.45), (-2.18, -.28, .82), mats["wood"], .04)
+        shed_roof = roof("ArtisanVariantShedRoof", 1.82, 2.42, 1.55, .55, mats["brown_roof"], .12)
+        shed_roof.location.x = -2.18
+        if variant == 2:
+            cylinder("ArtisanVariantKiln", .58, 1.65, (1.55, -.65, .825), mats["brick"], 18)
+            cylinder("ArtisanVariantKilnStack", .20, 1.5, (1.55, -.65, 2.18), mats["brick"], 16)
+        return (5, 4)
+
+    if family == "workshop":
+        box("WorkshopVariantYardRoof", (2.25, 1.55, .13), (-.7, 2.0, 1.55), mats["brown_roof"], .025, (math.radians(10), 0, 0))
+        for x in (-1.65, .25):
+            box("WorkshopVariantPost", (.1, .1, 1.5), (x, 2.45, .78), mats["dark_wood"], .016)
+        return (5, 5)
+    if family == "civic":
+        for x in (-1.65, 0, 1.65):
+            cylinder("CivicVariantColumn", .14, 2.0, (x, 2.05, 1.05), mats["light_stone"], 16)
+        box("CivicVariantPortico", (4.1, 1.15, .18), (0, 2.05, 2.1), mats["light_stone"], .025)
+        return (5, 5)
+    if family == "farmstead":
+        box("FarmsteadVariantStable", (2.05, 2.55, 1.45), (-2.72, -.15, .84), mats["wood"], .045)
+        stable_roof = roof("FarmsteadVariantStableRoof", 2.25, 2.78, 1.58, .68, mats["thatch"], .14)
+        stable_roof.location.x = -2.72
+        return (6, 4)
+    if family == "inn":
+        box("InnVariantCoachHouse", (2.2, 2.75, 1.65), (3.05, -.2, .96), mats["fieldstone"], .045)
+        coach_roof = roof("InnVariantCoachRoof", 2.4, 2.95, 1.78, .72, mats["brown_roof"], .14)
+        coach_roof.location.x = 3.05
+        return (7, 5)
+    if family == "shop":
+        box("ShopVariantGallery", (3.15, .78, .13), (-.15, 1.82, 1.78), mats["wood"], .02)
+        for x in (-1.55, -.15, 1.25):
+            box("ShopVariantPost", (.08, .08, 1.72), (x, 2.12, .9), mats["dark_wood"], .012)
+        return (4, 4)
+    if family == "smithy":
+        box("SmithyVariantCoalShed", (1.65, 2.2, 1.25), (2.55, -.25, .74), mats["dark_wood"], .04)
+        shed_roof = roof("SmithyVariantCoalRoof", 1.82, 2.4, 1.38, .52, mats["brown_roof"], .12)
+        shed_roof.location.x = 2.55
+        return (6, 4)
+    if family == "market":
+        box("MarketVariantWingRoof", (2.15, 3.45, .16), (3.35, 0, 2.05), mats["red_roof"], .025, (0, math.radians(8), 0))
+        for y in (-1.45, 0, 1.45):
+            box("MarketVariantWingPost", (.13, .13, 2.0), (3.35, y, 1.0), mats["dark_wood"], .018)
+        return (7, 5)
+    if family == "mill":
+        box("MillVariantGranary", (1.85, 2.35, 1.6), (-2.65, -.2, .92), mats["wood"], .04)
+        granary_roof = roof("MillVariantGranaryRoof", 2.05, 2.55, 1.72, .62, mats["thatch"], .13)
+        granary_roof.location.x = -2.65
+        return (6, 4)
+    return footprint
+
+
 def look_at(obj, target):
     obj.rotation_euler = (Vector(target) - obj.location).to_track_quat("-Z", "Y").to_euler()
 
@@ -438,6 +519,8 @@ def main():
     args = arguments()
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
+    for stale in output.glob("*.png"):
+        stale.unlink()
     scene, camera = setup_scene()
     mats = palette()
     builders = {
@@ -454,39 +537,45 @@ def main():
         "market": build_market,
         "mill": build_mill,
     }
+    variants = {family: (3 if family in {"cottage", "townhouse", "merchant", "artisan"} else 2)
+                for family in builders}
     entries = []
     for family, builder in builders.items():
-        clear_models()
-        footprint, door = builder(mats)
-        objects = [obj for obj in bpy.data.objects if obj.name not in {"VillageIsoCamera", "WarmKey", "CoolFill"}]
-        originals = {obj.name: obj.matrix_world.copy() for obj in objects}
-        for orientation, angle in ORIENTATIONS.items():
-            rotation = Matrix.Rotation(angle, 4, "Z")
-            for obj in objects:
-                obj.matrix_world = rotation @ originals[obj.name]
-            rotated_door = rotation @ Vector(door)
-            filename = f"{family}-{orientation}.png"
-            scene.render.filepath = str(output / filename)
-            bpy.ops.render.render(write_still=True)
-            anchor_x, anchor_y = project(scene, camera, (0, 0, 0))
-            door_x, door_y = project(scene, camera, rotated_door)
-            entries.append({
-                "key": f"temperate:{family}:{orientation}",
-                "biome": "temperate",
-                "family": family,
-                "orientation": orientation,
-                "src": f"/assets/buildings/temperate/{filename}",
-                "width": SIZE,
-                "height": SIZE,
-                "anchorX": anchor_x,
-                "anchorY": anchor_y,
-                "doorX": door_x,
-                "doorY": door_y,
-                "footprint": list(footprint),
-            })
+        for variant in range(variants[family]):
+            clear_models()
+            footprint, door = builder(mats)
+            footprint = add_architectural_variant(family, variant, footprint, mats)
+            objects = [obj for obj in bpy.data.objects if obj.name not in {"VillageIsoCamera", "WarmKey", "CoolFill"}]
+            originals = {obj.name: obj.matrix_world.copy() for obj in objects}
+            for orientation, angle in ORIENTATIONS.items():
+                rotation = Matrix.Rotation(angle, 4, "Z")
+                for obj in objects:
+                    obj.matrix_world = rotation @ originals[obj.name]
+                rotated_door = rotation @ Vector(door)
+                filename = f"{family}-v{variant}-{orientation}.png"
+                scene.render.filepath = str(output / filename)
+                bpy.ops.render.render(write_still=True)
+                anchor_x, anchor_y = project(scene, camera, (0, 0, 0))
+                door_x, door_y = project(scene, camera, rotated_door)
+                oriented_footprint = footprint[::-1] if orientation in {"east", "west"} else footprint
+                entries.append({
+                    "key": f"temperate:{family}:{variant}:{orientation}",
+                    "biome": "temperate",
+                    "family": family,
+                    "variant": variant,
+                    "orientation": orientation,
+                    "src": f"/assets/buildings/temperate/{filename}",
+                    "width": SIZE,
+                    "height": SIZE,
+                    "anchorX": anchor_x,
+                    "anchorY": anchor_y,
+                    "doorX": door_x,
+                    "doorY": door_y,
+                    "footprint": list(oriented_footprint),
+                })
     manifest = {
-        "schemaVersion": 1,
-        "generator": "Blender 4.5 Village procedural pilot",
+        "schemaVersion": 2,
+        "generator": "Blender 4.5 Village v3 procedural architecture",
         "baseTileWidth": 32,
         "baseTileHeight": 16,
         "entries": entries,

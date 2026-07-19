@@ -103,6 +103,11 @@ async function downloadPng() {
 
 form.addEventListener('submit', (event) => { event.preventDefault(); generate(); });
 generateButton.addEventListener('click', () => { seedInput.value = randomSeed(); });
+seedInput.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  generate();
+});
 $('#random-seed').addEventListener('click', () => { seedInput.value = randomSeed(); generate(); });
 $('#export-button').addEventListener('click', downloadPng);
 $('#center-button').addEventListener('click', () => renderer.center());

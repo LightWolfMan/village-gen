@@ -1,5 +1,7 @@
 import { coordinateHash, createRandom, hashString } from "./random.js";
 import { findPath } from "./pathfinding.js";
+import { addRoadPath, bridgeAxisAt, finalizeRoadTopology } from "./road-topology.js";
+import { createUrbanPlan } from "./urbanism.js";
 import { validateVillage } from "./validation.js";
 
 export const DEFAULT_SETTINGS = Object.freeze({
@@ -176,12 +178,6 @@ function choosePlaza(map, random) {
   return { x, y, width: size, height: size, level };
 }
 
-function addRoad(roadMap, x, y, kind) {
-  const key = keyOf(x, y);
-  const priority = { street: 0, main: 1, plaza: 2 };
-  if (!roadMap.has(key) || priority[kind] > priority[roadMap.get(key)]) roadMap.set(key, kind);
-}
-
 function roadCost(map, randomSeed) {
   return (x, y, previousX, previousY) => {
     const index = y * map.width + x;
@@ -191,6 +187,37 @@ function roadCost(map, randomSeed) {
     const variation = coordinateHash(randomSeed, x, y, 99) / 4294967295 * 0.6;
     return 1 + waterCost + slope + variation;
   };
+}
+
+function nearestDryRoadPoint(map, point) {
+  if (map.terrain[point.y * map.width + point.x] !== "water") return point;
+  for (let radius = 1; radius < Math.max(map.width, map.height); radius += 1) {
+    for (let offset = -radius; offset <= radius; offset += 1) {
+      const candidates = [
+        { x: point.x + offset, y: point.y - radius }, { x: point.x + offset, y: point.y + radius },
+        { x: point.x - radius, y: point.y + offset }, { x: point.x + radius, y: point.y + offset },
+      ];
+      for (const candidate of candidates) {
+        if (candidate.x < 1 || candidate.y < 1 || candidate.x >= map.width - 1 || candidate.y >= map.height - 1) continue;
+        if (map.terrain[candidate.y * map.width + candidate.x] !== "water") return candidate;
+      }
+    }
+  }
+  return point;
+}
+
+function routeRoad(map, roadMap, start, goal, cost, kind) {
+  const safeStart = nearestDryRoadPoint(map, start);
+  const safeGoal = nearestDryRoadPoint(map, goal);
+  const reuseCost = (x, y, previousX, previousY) => cost(x, y, previousX, previousY) * (roadMap.has(keyOf(x, y)) ? 0.72 : 1);
+  const path = findPath(map.width, map.height, safeStart, safeGoal, reuseCost, {
+    isWater: (x, y) => map.terrain[y * map.width + x] === "water",
+    bridgeAxisAt: (x, y) => bridgeAxisAt(roadMap, x, y),
+    maxWaterRun: kind === "main" ? 14 : 8,
+    turnPenalty: kind === "main" ? 1.1 : 1.6,
+    heuristicWeight: kind === "main" ? 1.15 : 1.3,
+  });
+  addRoadPath(roadMap, path, kind, map);
 }
 
 function createOrganicRoads(map, random, roadMap) {
@@ -204,7 +231,7 @@ function createOrganicRoads(map, random, roadMap) {
   ];
   const cost = roadCost(map, hashString(`${map.seed}:roads`));
   for (const endpoint of endpoints) {
-    for (const point of findPath(map.width, map.height, center, endpoint, cost)) addRoad(roadMap, point.x, point.y, "main");
+    routeRoad(map, roadMap, center, endpoint, cost, "main");
   }
   const ringRadius = map.settings.settlement === "hamlet" ? 10 : map.settings.settlement === "town" ? 25 : 17;
   const anchors = [
@@ -216,8 +243,8 @@ function createOrganicRoads(map, random, roadMap) {
   for (let index = 0; index < anchors.length; index += 1) {
     const start = anchors[index];
     const goal = anchors[(index + 1) % anchors.length];
-    for (const point of findPath(map.width, map.height, start, goal, cost)) addRoad(roadMap, point.x, point.y, "street");
-    for (const point of findPath(map.width, map.height, center, start, cost)) addRoad(roadMap, point.x, point.y, "street");
+    routeRoad(map, roadMap, start, goal, cost, "street");
+    routeRoad(map, roadMap, center, start, cost, "street");
   }
   if (map.settings.settlement !== "hamlet") {
     const outer = Math.floor(ringRadius * (map.settings.settlement === "town" ? 1.55 : 1.45));
@@ -227,15 +254,21 @@ function createOrganicRoads(map, random, roadMap) {
     for (let index = 0; index < outerAnchors.length; index += 1) {
       const start = outerAnchors[index];
       const goal = outerAnchors[(index + 1) % 4];
-      addLine(roadMap, start.x, start.y, goal.x, goal.y, "street");
-      for (const point of findPath(map.width, map.height, anchors[index], outerAnchors[index], cost)) addRoad(roadMap, point.x, point.y, "street");
+      addLine(map, roadMap, start.x, start.y, goal.x, goal.y, "street");
+      routeRoad(map, roadMap, anchors[index], outerAnchors[index], cost, "street");
     }
   }
 }
 
-function addLine(roadMap, x1, y1, x2, y2, kind) {
-  if (x1 === x2) for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y += 1) addRoad(roadMap, x1, y, kind);
-  else for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x += 1) addRoad(roadMap, x, y1, kind);
+function addLine(map, roadMap, x1, y1, x2, y2, kind) {
+  const vertical = x1 === x2;
+  const seed = hashString(`${map.seed}:line:${x1},${y1}:${x2},${y2}:${kind}`);
+  const terrainCost = roadCost(map, seed);
+  const constrainedCost = (x, y, previousX, previousY) => {
+    const offset = vertical ? Math.abs(x - x1) : Math.abs(y - y1);
+    return terrainCost(x, y, previousX, previousY) + offset * 1.25;
+  };
+  routeRoad(map, roadMap, { x: x1, y: y1 }, { x: x2, y: y2 }, constrainedCost, kind);
 }
 
 function createGridRoads(map, random, roadMap) {
@@ -244,13 +277,13 @@ function createGridRoads(map, random, roadMap) {
   const spacing = random.int(7, 9);
   const radius = Math.floor(map.width * (map.settings.settlement === "hamlet" ? 0.2 : 0.34));
   map.gridSpec = { centerX, centerY, spacing, radius };
-  addLine(roadMap, 1, centerY, map.width - 2, centerY, "main");
-  addLine(roadMap, centerX, 1, centerX, map.height - 2, "main");
+  addLine(map, roadMap, 1, centerY, map.width - 2, centerY, "main");
+  addLine(map, roadMap, centerX, 1, centerX, map.height - 2, "main");
   for (let x = centerX - Math.floor(radius / spacing) * spacing; x <= centerX + radius; x += spacing) {
-    if (x > 1 && x < map.width - 2) addLine(roadMap, x, centerY - radius, x, centerY + radius, "street");
+    if (x > 1 && x < map.width - 2) addLine(map, roadMap, x, centerY - radius, x, centerY + radius, "street");
   }
   for (let y = centerY - Math.floor(radius / spacing) * spacing; y <= centerY + radius; y += spacing) {
-    if (y > 1 && y < map.height - 2) addLine(roadMap, centerX - radius, y, centerX + radius, y, "street");
+    if (y > 1 && y < map.height - 2) addLine(map, roadMap, centerX - radius, y, centerX + radius, y, "street");
   }
 }
 
@@ -269,19 +302,7 @@ function smoothRoadHeights(map, roadMap) {
   }
 }
 
-function finalizeRoads(map, roadMap) {
-  return [...roadMap.entries()].map(([key, kind]) => {
-    const [x, y] = key.split(",").map(Number);
-    const bridge = map.terrain[y * map.width + x] === "water";
-    let orientation = null;
-    if (bridge) {
-      const horizontal = roadMap.has(keyOf(x - 1, y)) || roadMap.has(keyOf(x + 1, y));
-      const vertical = roadMap.has(keyOf(x, y - 1)) || roadMap.has(keyOf(x, y + 1));
-      orientation = horizontal && vertical ? "cross" : horizontal ? "ew" : "ns";
-    }
-    return { x, y, kind, bridge, orientation };
-  }).sort((a, b) => a.y - b.y || a.x - b.x);
-}
+function finalizeRoads(map, roadMap) { return finalizeRoadTopology(map, roadMap); }
 
 function nearestRoadAnchor(map, target, used = new Set()) {
   let best = map.roads[0];
@@ -419,7 +440,16 @@ function finalizeZones(map) {
       const x = index % map.width; const y = Math.floor(index / map.width);
       minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); cellCount += 1;
     }
-    return { ...zone, cellCount, bounds: { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 }, bridgeLinks: bridgeLinks[zone.type] };
+    let anchor = zone.anchor;
+    if (map.zoneMap[anchor.y * map.width + anchor.x] !== zone.type
+      || map.roads.find((road) => road.x === anchor.x && road.y === anchor.y)?.bridge !== false) {
+      const candidate = map.roads
+        .filter((road) => !road.bridge && map.zoneMap[road.y * map.width + road.x] === zone.type)
+        .sort((a, b) => (Math.abs(a.x - anchor.x) + Math.abs(a.y - anchor.y))
+          - (Math.abs(b.x - anchor.x) + Math.abs(b.y - anchor.y)) || a.y - b.y || a.x - b.x)[0];
+      if (candidate) anchor = { x: candidate.x, y: candidate.y };
+    }
+    return { ...zone, anchor, cellCount, bounds: { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 }, bridgeLinks: bridgeLinks[zone.type] };
   });
 }
 
@@ -635,34 +665,14 @@ function terrainCounts(terrain) {
   return result;
 }
 
-function countBridgeSpans(roads) {
-  const remaining = new Set(roads.filter((road) => road.bridge).map((road) => keyOf(road.x, road.y)));
-  let spans = 0;
-  while (remaining.size) {
-    spans += 1;
-    const [start] = remaining;
-    remaining.delete(start);
-    const queue = [start];
-    while (queue.length) {
-      const [x, y] = queue.pop().split(",").map(Number);
-      for (const [dx, dy] of DIRECTIONS) {
-        const next = keyOf(x + dx, y + dy);
-        if (!remaining.delete(next)) continue;
-        queue.push(next);
-      }
-    }
-  }
-  return spans;
-}
-
 export function generateVillage(seedInput = "", inputSettings = {}) {
   const seed = String(seedInput);
   const settings = normalizeSettings(inputSettings);
   const numericSeed = hashString(seed);
-  const random = createRandom(`${seed}:v2`);
+  const random = createRandom(`${seed}:v3`);
   const fields = createTerrain(numericSeed, settings);
   const map = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     seed,
     settings,
     width: settings.mapSize,
@@ -677,26 +687,51 @@ export function generateVillage(seedInput = "", inputSettings = {}) {
   map.plaza = choosePlaza(map, random.fork("plaza"));
   const roadMap = new Map();
   for (let y = map.plaza.y; y < map.plaza.y + map.plaza.height; y += 1) {
-    for (let x = map.plaza.x; x < map.plaza.x + map.plaza.width; x += 1) addRoad(roadMap, x, y, "plaza");
+    const row = [];
+    for (let x = map.plaza.x; x < map.plaza.x + map.plaza.width; x += 1) row.push({ x, y });
+    addRoadPath(roadMap, row, "plaza", map);
+  }
+  for (let x = map.plaza.x; x < map.plaza.x + map.plaza.width; x += 1) {
+    const column = [];
+    for (let y = map.plaza.y; y < map.plaza.y + map.plaza.height; y += 1) column.push({ x, y });
+    addRoadPath(roadMap, column, "plaza", map);
   }
   if (settings.layout === "grid") createGridRoads(map, random.fork("grid"), roadMap);
   else createOrganicRoads(map, random.fork("organic"), roadMap);
   smoothRoadHeights(map, roadMap);
-  map.roads = finalizeRoads(map, roadMap);
+  let roadTopology = finalizeRoads(map, roadMap);
+  map.roads = roadTopology.roads;
+  map.bridgeSpans = roadTopology.bridgeSpans;
   const zoning = createZones(map);
   map.zoneMap = zoning.zoneMap;
   map.zones = zoning.zones;
-  const placement = placeBuildings(map, random.fork("buildings"), roadMap);
+  // Zone anchors may reclaim a single road tile from shallow water. Refresh
+  // bridge metadata before extracting straight segments and their frontages.
+  roadTopology = finalizeRoads(map, roadMap);
+  map.roads = roadTopology.roads;
+  map.bridgeSpans = roadTopology.bridgeSpans;
+  const settlement = SETTLEMENTS[settings.settlement];
+  const placement = createUrbanPlan(map, random.fork("urbanism"), {
+    houseTarget: random.fork("population").int(...settlement.houses),
+    services: settlement.services,
+    style: (type, zone, styleRandom) => buildingStyle(map, type, zone, styleRandom),
+    flatten: (x, y, width, height, level, zone) => {
+      flattenArea(map, x, y, width, height, level, BIOMES[map.settings.biome].ground);
+      for (let py = y; py < y + height; py += 1) {
+        for (let px = x; px < x + width; px += 1) map.zoneMap[py * map.width + px] = zone;
+      }
+    },
+  });
+  map.roadSegments = placement.roadSegments;
+  map.frontages = placement.frontages;
+  map.lots = placement.lots;
   map.buildings = placement.buildings;
-  // Coastal lots may reclaim their single access tile, so bridge metadata is
-  // computed once more from the final terrain.
-  map.roads = finalizeRoads(map, roadMap);
   finalizeZones(map);
   map.props = placeProps(map, random.fork("props"), placement.reserved, roadMap, placement.buildings);
   map.stats = {
     houses: map.buildings.filter((building) => building.type === "house").length,
     services: map.buildings.filter((building) => building.type !== "house").length,
-    bridges: countBridgeSpans(map.roads),
+    bridges: map.bridgeSpans.length,
     terrainCounts: terrainCounts(map.terrain),
     zoneCounts: Object.fromEntries(map.zones.map((zone) => [zone.type, zone.cellCount])),
   };

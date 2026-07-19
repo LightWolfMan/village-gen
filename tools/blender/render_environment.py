@@ -82,22 +82,27 @@ def build_road(kind, mats):
             stone(f"Paver{index}", x, y, 0.087, 0.92 if kind == "plaza" else 0.78, value, index * .29)
 
 
-def build_bridge(axis, mats):
-    if axis == "cross":
-        village.box("CrossBridgeDeck", (1.05, 1.05, 0.16), (0, 0, 0.15), mats["bridge"], 0.035)
-        for x in (-.38, -.12, .14, .40):
-            village.box("CrossPlankX", (0.19, 1.02, 0.055), (x, 0, 0.255), mats["bridge_light"], 0.015)
-        return
+def build_bridge(axis, role, mats):
+    """Constroi uma peca reta sem fechamento transversal nas emendas."""
     rotation = 0 if axis == "ew" else math.pi / 2
     root = []
-    root.append(village.box("BridgeDeck", (1.08, 0.82, 0.15), (0, 0, 0.16), mats["bridge"], 0.035))
+    root.append(village.box("BridgeDeck", (1.10, 0.82, 0.15), (0, 0, 0.16), mats["bridge"], 0.025))
     for x in (-.45, -.27, -.09, .09, .27, .45):
         root.append(village.box("BridgePlank", (0.15, 0.78, 0.055), (x, 0, 0.265), mats["bridge_light"], 0.014))
-    for x in (-.42, .42):
+    post_x = []
+    if role in {"single", "start"}:
+        post_x.append(-.46)
+    if role in {"single", "end"}:
+        post_x.append(.46)
+    if role == "post":
+        post_x.append(0)
+    for x in post_x:
         for y in (-.40, .40):
             root.append(village.box("BridgePost", (0.075, 0.075, 0.62), (x, y, 0.48), mats["dark_wood"], 0.012))
     for y in (-.40, .40):
-        root.append(village.box("BridgeRail", (1.0, 0.07, 0.08), (0, y, 0.73), mats["dark_wood"], 0.015))
+        root.append(village.box("BridgeRail", (1.10, 0.07, 0.08), (0, y, 0.73), mats["dark_wood"], 0.012))
+    for head_x in ((-.50,) if role == "start" else (.50,) if role == "end" else (-.50, .50) if role == "single" else ()):
+        root.append(village.box("StoneAbutment", (.16, 1.02, .28), (head_x, 0, .10), mats["fieldstone"], .025))
     if rotation:
         transform = Matrix.Rotation(rotation, 4, "Z")
         for obj in root:
@@ -106,6 +111,8 @@ def build_bridge(axis, mats):
 
 def render_environment(scene, camera, output, mats):
     output.mkdir(parents=True, exist_ok=True)
+    for stale in output.glob("bridge-*.png"):
+        stale.unlink()
     scene.render.resolution_x = 128
     scene.render.resolution_y = 128
     set_camera(camera, 0.32, 2.828427)
@@ -113,9 +120,8 @@ def render_environment(scene, camera, output, mats):
         ("road-street", lambda: build_road("street", mats)),
         ("road-main", lambda: build_road("main", mats)),
         ("road-plaza", lambda: build_road("plaza", mats)),
-        ("bridge-ew", lambda: build_bridge("ew", mats)),
-        ("bridge-ns", lambda: build_bridge("ns", mats)),
-        ("bridge-cross", lambda: build_bridge("cross", mats)),
+        *[(f"bridge-{axis}-{role}", lambda axis=axis, role=role: build_bridge(axis, role, mats))
+          for axis in ("ew", "ns") for role in ("single", "start", "middle", "post", "end")],
     ]
     entries = []
     for key, builder in definitions:
@@ -129,7 +135,7 @@ def render_environment(scene, camera, output, mats):
             "key": key, "type": key, "src": f"/assets/environment/{filename}",
             "width": 128, "height": 128, "anchorX": anchor_x, "anchorY": anchor_y,
         })
-    manifest = {"schemaVersion": 1, "baseTileWidth": 64, "entries": entries}
+    manifest = {"schemaVersion": 2, "baseTileWidth": 64, "entries": entries}
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
@@ -277,4 +283,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
