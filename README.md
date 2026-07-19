@@ -225,7 +225,7 @@ Consulte [`assets/ART.md`](assets/ART.md), [`assets/buildings/ART.md`](assets/bu
 
 O repositório está **público**, mas ainda não possui uma licença de reutilização definida. O código e os assets atuais são originais deste projeto; nenhum asset proprietário de SimCity, Pokémon, Ninja Adventure ou de outros jogos foi incorporado.
 
-Se o projeto for aberto ao público futuramente, adicione um arquivo `LICENSE` antes de permitir reutilização ou distribuição externa.
+Antes de permitir reutilização ou distribuição externa, será necessário definir os termos em um arquivo `LICENSE`.
 
 ---
 
