@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#17251f">
+    <title>Vilarejo — Gerador procedural</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">V</span>
+          <div>
+            <p class="eyebrow">Cartógrafo procedural</p>
+            <h1>Vilarejo</h1>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="center-button" class="button button-ghost" type="button" title="Centralizar mapa (C)">Centralizar</button>
+          <button id="export-button" class="button button-gold" type="button">Exportar PNG</button>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="Gerador de vila">
+        <aside class="control-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Oficina</p>
+              <h2>Nova vila</h2>
+            </div>
+            <span id="status-dot" class="status-dot" title="Gerador pronto"></span>
+          </div>
+
+          <form id="generator-form">
+            <label class="field-label" for="seed-input">Seed da vila</label>
+            <div class="seed-row">
+              <input id="seed-input" name="seed" type="text" maxlength="120" spellcheck="false" autocomplete="off" aria-describedby="seed-hint">
+              <button id="random-seed-button" class="icon-button" type="button" title="Sortear nova seed" aria-label="Sortear nova seed">↻</button>
+            </div>
+            <p id="seed-hint" class="field-hint">A mesma seed sempre recria o mesmo lugar.</p>
+
+            <div class="divider"></div>
+
+            <label class="field-label" for="biome-input">Bioma</label>
+            <div class="select-wrap">
+              <select id="biome-input" name="biome">
+                <option value="temperate">Campo temperado</option>
+                <option value="arid">Sertão árido</option>
+                <option value="snowy">Planalto nevado</option>
+                <option value="wetland">Pântano úmido</option>
+              </select>
+            </div>
+
+            <div class="range-heading">
+              <label class="field-label" for="size-input">Tamanho do mapa</label>
+              <output id="size-output" for="size-input">128 × 128</output>
+            </div>
+            <input id="size-input" class="range" type="range" min="80" max="160" step="16" value="128">
+
+            <div class="range-heading">
+              <label class="field-label" for="density-input">Densidade</label>
+              <output id="density-output" for="density-input">Média</output>
+            </div>
+            <input id="density-input" class="range" type="range" min="0.7" max="1.3" step="0.1" value="1">
+
+            <div class="range-heading">
+              <label class="field-label" for="water-input">Água</label>
+              <output id="water-output" for="water-input">Equilibrada</output>
+            </div>
+            <input id="water-input" class="range" type="range" min="0" max="1" step="0.25" value="0.5">
+
+            <label class="toggle-row" for="rivers-input">
+              <input id="rivers-input" type="checkbox" name="rivers">
+              <span>Rio atravessando a vila</span>
+            </label>
+
+            <button class="button button-primary generate-button" type="submit">
+              <span aria-hidden="true">✦</span>
+              Gerar vila
+            </button>
+          </form>
+
+          <div class="village-card" aria-live="polite">
+            <div class="village-card-title">
+              <div>
+                <p class="eyebrow">Mapa atual</p>
+                <strong id="village-name">—</strong>
+              </div>
+              <button id="copy-seed-button" class="copy-button" type="button" title="Copiar seed">Copiar seed</button>
+            </div>
+            <dl class="metrics">
+              <div><dt>Casas</dt><dd id="house-count">—</dd></div>
+              <div><dt>Serviços</dt><dd id="service-count">—</dd></div>
+              <div><dt>Árvores</dt><dd id="tree-count">—</dd></div>
+              <div><dt>Geração</dt><dd id="generation-time">—</dd></div>
+            </dl>
+            <div class="terrain-bar" id="terrain-bar" aria-hidden="true"></div>
+          </div>
+
+          <p class="controls-help"><span>Arraste ou use setas</span> para explorar · <span>Roda ou +/−</span> para zoom</p>
+        </aside>
+
+        <section class="map-stage" aria-label="Mapa gerado">
+          <canvas id="map-canvas" tabindex="0" aria-label="Mapa da vila. Arraste para mover e use a roda do mouse para ampliar."></canvas>
+          <div class="map-overlay top-left">
+            <span class="biome-chip"><i></i> <span id="biome-label">Campo temperado</span></span>
+          </div>
+          <div class="map-overlay top-right map-legend" id="map-legend" aria-hidden="true"></div>
+          <div class="map-overlay bottom-right zoom-controls" aria-label="Controles de zoom">
+            <button id="zoom-out-button" type="button" aria-label="Diminuir zoom">−</button>
+            <span id="zoom-level">100%</span>
+            <button id="zoom-in-button" type="button" aria-label="Aumentar zoom">+</button>
+          </div>
+          <div id="loading-card" class="loading-card" role="status" aria-live="polite" hidden>
+            <span class="spinner"></span>
+            <strong>Desenhando caminhos…</strong>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>

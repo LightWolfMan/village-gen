@@ -1,0 +1,14 @@
+{
+  "name": "gerador-vila-procedural",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test",
+    "check": "node --check server.mjs && node --check src/app.js && node --check src/render/renderer.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
