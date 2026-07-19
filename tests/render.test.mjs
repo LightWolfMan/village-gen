@@ -3,11 +3,15 @@ import assert from 'node:assert/strict';
 
 import {
   computeDoorPlacement,
+  computeBuildingSpritePlacement,
+  canvasToPngBlob,
   computeEavedRoofBase,
   computeRenderBounds,
   computeRoofGeometry,
   getArchitectureProfile,
+  parseBuildingSpriteManifest,
   projectPoint,
+  resolveBuildingSprite,
 } from '../src/render/renderer.js';
 
 function sampleMap() {
@@ -192,4 +196,86 @@ test('perfis arquitetonicos alteram a silhueta sem quebrar os bounds', () => {
   tall.buildings[0].architecture = 'townhouse';
   tall.props = [];
   assert.ok(computeRenderBounds(tall).height > computeRenderBounds(low).height);
+});
+
+function buildingSpriteFixture(family = 'civic', orientation = 'south', overrides = {}) {
+  return {
+    biome: 'temperate', family, orientation, src: `temperate/${family}-${orientation}.png`,
+    width: 256, height: 256, anchorX: 128, anchorY: 192, doorX: 128, doorY: 190,
+    footprint: [2, 2], ...overrides,
+  };
+}
+
+test('manifesto Blender e normalizado sem depender de Image ou DOM', () => {
+  const entries = parseBuildingSpriteManifest({
+    schemaVersion: 1, baseTileWidth: 32, baseTileHeight: 16,
+    entries: [buildingSpriteFixture(), { ...buildingSpriteFixture(), orientation: 'diagonal' }],
+  });
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].path, '/assets/buildings/temperate/civic-south.png');
+  assert.deepEqual(entries[0].footprint, { width: 2, height: 2 });
+  assert.ok(Object.isFrozen(entries));
+  assert.ok(Object.isFrozen(entries[0]));
+  assert.deepEqual(parseBuildingSpriteManifest(null), []);
+});
+
+test('resolver usa perfil, orientacao e aliases raster somente no bioma temperado', () => {
+  const entries = parseBuildingSpriteManifest({ entries: [
+    buildingSpriteFixture('civic', 'north'),
+    buildingSpriteFixture('farmstead', 'west'),
+    buildingSpriteFixture('cottage', 'south'),
+  ] });
+  assert.equal(resolveBuildingSprite({ architecture: 'manor', orientation: 'north' }, 'temperate', entries)?.family, 'civic');
+  assert.equal(resolveBuildingSprite({ architecture: 'longhouse', orientation: 'west' }, 'temperate', entries)?.family, 'farmstead');
+  assert.equal(resolveBuildingSprite({ architecture: 'timber-frame', orientation: 'south' }, 'temperate', entries)?.family, 'cottage');
+  assert.equal(resolveBuildingSprite({ architecture: 'manor', orientation: 'south' }, 'temperate', entries), null);
+  assert.equal(resolveBuildingSprite({ architecture: 'manor', orientation: 'north' }, 'snowy', entries), null);
+  assert.equal(resolveBuildingSprite({ architecture: 'tower', orientation: 'north' }, 'temperate', entries), null);
+});
+
+test('placement raster preserva proporcao, ancora e porta visual', () => {
+  const [sprite] = parseBuildingSpriteManifest({ entries: [buildingSpriteFixture('cottage', 'south')] });
+  const placement = computeBuildingSpritePlacement({ x: 10, y: 20, width: 4, height: 2, baseLevel: 1 }, sprite);
+  assert.equal(placement.scale, 1);
+  assert.equal(placement.width, 256);
+  assert.equal(placement.height, 256);
+  assert.deepEqual(placement.anchor, projectPoint(11.5, 20.5, 1));
+  assert.equal(placement.visualDoor.x, placement.x + sprite.doorX * placement.scale);
+  assert.equal(placement.visualDoor.y, placement.y + sprite.doorY * placement.scale);
+
+  const reduced = computeBuildingSpritePlacement({ x: 0, y: 0, width: 1, height: 3 }, sprite);
+  assert.equal(reduced.scale, .5);
+  assert.equal(reduced.width / reduced.height, sprite.width / sprite.height);
+  assert.throws(() => computeBuildingSpritePlacement({}, { footprint: [0, 0] }), /Metadados de sprite invalidos/);
+});
+
+test('bounds incluem sprite grande e continuam puros quando o bitmap falta', () => {
+  const map = sampleMap();
+  map.buildings[0].architecture = 'civic';
+  const [sprite] = parseBuildingSpriteManifest({ entries: [buildingSpriteFixture('civic', 'south', {
+    width: 1024, height: 1024, anchorX: 512, anchorY: 768, doorX: 512, doorY: 760,
+  })] });
+  const plain = computeRenderBounds(map);
+  const withSprite = computeRenderBounds(map, { buildingSprites: new Map([['temperate:civic:south', sprite]]) });
+  assert.ok(withSprite.width > plain.width);
+  assert.ok(withSprite.height > plain.height);
+  assert.equal(resolveBuildingSprite(map.buildings[0], 'temperate', new Map()), null);
+});
+
+test('exportacao PNG aceita OffscreenCanvas e HTMLCanvasElement', async () => {
+  const offscreenBlob = { type: 'image/png', size: 10 };
+  const offscreen = { convertToBlob: async (options) => {
+    assert.deepEqual(options, { type: 'image/png' });
+    return offscreenBlob;
+  } };
+  assert.equal(await canvasToPngBlob(offscreen), offscreenBlob);
+
+  const htmlBlob = { type: 'image/png', size: 12 };
+  const html = { toBlob: (callback, type) => {
+    assert.equal(type, 'image/png');
+    callback(htmlBlob);
+  } };
+  assert.equal(await canvasToPngBlob(html), htmlBlob);
+  await assert.rejects(() => canvasToPngBlob({}), /serializacao PNG/);
+  await assert.rejects(() => canvasToPngBlob({ convertToBlob: async () => null }), /nao conseguiu/);
 });

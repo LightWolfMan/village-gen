@@ -1,12 +1,13 @@
 {
   "name": "gerador-vila-procedural",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test",
-    "check": "node --check server.mjs && node --check src/app.js && node --check src/core/index.js && node --check src/render/renderer.js"
+    "check": "node --check server.mjs && node --check src/app.js && node --check src/core/index.js && node --check src/render/renderer.js",
+    "art:buildings": "pwsh -NoProfile -File tools/blender/render-temperate.ps1"
   },
   "engines": {
     "node": ">=20"

@@ -1,0 +1,348 @@
+{
+  "schemaVersion": 1,
+  "generator": "Blender 4.5 Village procedural pilot",
+  "baseTileWidth": 32,
+  "baseTileHeight": 16,
+  "entries": [
+    {
+      "key": "temperate:cottage:south",
+      "biome": "temperate",
+      "family": "cottage",
+      "orientation": "south",
+      "src": "/assets/buildings/temperate/cottage-south.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 145.6,
+      "doorY": 172.073,
+      "footprint": [
+        3,
+        2
+      ]
+    },
+    {
+      "key": "temperate:cottage:east",
+      "biome": "temperate",
+      "family": "cottage",
+      "orientation": "east",
+      "src": "/assets/buildings/temperate/cottage-east.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 110.4,
+      "doorY": 172.073,
+      "footprint": [
+        3,
+        2
+      ]
+    },
+    {
+      "key": "temperate:cottage:north",
+      "biome": "temperate",
+      "family": "cottage",
+      "orientation": "north",
+      "src": "/assets/buildings/temperate/cottage-north.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 110.4,
+      "doorY": 154.473,
+      "footprint": [
+        3,
+        2
+      ]
+    },
+    {
+      "key": "temperate:cottage:west",
+      "biome": "temperate",
+      "family": "cottage",
+      "orientation": "west",
+      "src": "/assets/buildings/temperate/cottage-west.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 145.6,
+      "doorY": 154.473,
+      "footprint": [
+        3,
+        2
+      ]
+    },
+    {
+      "key": "temperate:townhouse:south",
+      "biome": "temperate",
+      "family": "townhouse",
+      "orientation": "south",
+      "src": "/assets/buildings/temperate/townhouse-south.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 138.56,
+      "doorY": 179.193,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:townhouse:east",
+      "biome": "temperate",
+      "family": "townhouse",
+      "orientation": "east",
+      "src": "/assets/buildings/temperate/townhouse-east.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 96.16,
+      "doorY": 168.553,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:townhouse:north",
+      "biome": "temperate",
+      "family": "townhouse",
+      "orientation": "north",
+      "src": "/assets/buildings/temperate/townhouse-north.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 117.44,
+      "doorY": 147.353,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:townhouse:west",
+      "biome": "temperate",
+      "family": "townhouse",
+      "orientation": "west",
+      "src": "/assets/buildings/temperate/townhouse-west.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 159.84,
+      "doorY": 157.993,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:workshop:south",
+      "biome": "temperate",
+      "family": "workshop",
+      "orientation": "south",
+      "src": "/assets/buildings/temperate/workshop-south.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 139.84,
+      "doorY": 181.353,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:workshop:east",
+      "biome": "temperate",
+      "family": "workshop",
+      "orientation": "east",
+      "src": "/assets/buildings/temperate/workshop-east.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 91.84,
+      "doorY": 169.193,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:workshop:north",
+      "biome": "temperate",
+      "family": "workshop",
+      "orientation": "north",
+      "src": "/assets/buildings/temperate/workshop-north.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 116.16,
+      "doorY": 145.193,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:workshop:west",
+      "biome": "temperate",
+      "family": "workshop",
+      "orientation": "west",
+      "src": "/assets/buildings/temperate/workshop-west.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 164.16,
+      "doorY": 157.353,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:civic:south",
+      "biome": "temperate",
+      "family": "civic",
+      "orientation": "south",
+      "src": "/assets/buildings/temperate/civic-south.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 143.008,
+      "doorY": 185.369,
+      "footprint": [
+        5,
+        4
+      ]
+    },
+    {
+      "key": "temperate:civic:east",
+      "biome": "temperate",
+      "family": "civic",
+      "orientation": "east",
+      "src": "/assets/buildings/temperate/civic-east.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 83.808,
+      "doorY": 170.777,
+      "footprint": [
+        5,
+        4
+      ]
+    },
+    {
+      "key": "temperate:civic:north",
+      "biome": "temperate",
+      "family": "civic",
+      "orientation": "north",
+      "src": "/assets/buildings/temperate/civic-north.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 112.992,
+      "doorY": 141.177,
+      "footprint": [
+        5,
+        4
+      ]
+    },
+    {
+      "key": "temperate:civic:west",
+      "biome": "temperate",
+      "family": "civic",
+      "orientation": "west",
+      "src": "/assets/buildings/temperate/civic-west.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 172.192,
+      "doorY": 155.769,
+      "footprint": [
+        5,
+        4
+      ]
+    },
+    {
+      "key": "temperate:farmstead:south",
+      "biome": "temperate",
+      "family": "farmstead",
+      "orientation": "south",
+      "src": "/assets/buildings/temperate/farmstead-south.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 138.24,
+      "doorY": 180.553,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:farmstead:east",
+      "biome": "temperate",
+      "family": "farmstead",
+      "orientation": "east",
+      "src": "/assets/buildings/temperate/farmstead-east.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 93.44,
+      "doorY": 168.393,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:farmstead:north",
+      "biome": "temperate",
+      "family": "farmstead",
+      "orientation": "north",
+      "src": "/assets/buildings/temperate/farmstead-north.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 117.76,
+      "doorY": 145.993,
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "key": "temperate:farmstead:west",
+      "biome": "temperate",
+      "family": "farmstead",
+      "orientation": "west",
+      "src": "/assets/buildings/temperate/farmstead-west.png",
+      "width": 256,
+      "height": 256,
+      "anchorX": 128.0,
+      "anchorY": 163.273,
+      "doorX": 162.56,
+      "doorY": 158.153,
+      "footprint": [
+        4,
+        3
+      ]
+    }
+  ]
+}

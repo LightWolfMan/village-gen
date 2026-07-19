@@ -1,5 +1,5 @@
 import { BIOMES, DEFAULT_SETTINGS, generateVillage } from './core/index.js';
-import { VillageRenderer, loadArtAssets } from './render/renderer.js';
+import { VillageRenderer, canvasToPngBlob, loadArtAssets } from './render/renderer.js';
 
 const $ = (selector) => document.querySelector(selector);
 const canvas = $('#village-canvas');
@@ -83,11 +83,11 @@ async function generate() {
   }
 }
 
-function downloadPng() {
+async function downloadPng() {
   if (!village) return;
-  const exportCanvas = renderer.exportCanvas();
-  exportCanvas.toBlob((blob) => {
-    if (!blob) return alert('O navegador não conseguiu criar o PNG.');
+  try {
+    const exportCanvas = renderer.exportCanvas();
+    const blob = await canvasToPngBlob(exportCanvas);
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     const safeSeed = village.seed.replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 60) || 'vila';
@@ -95,7 +95,10 @@ function downloadPng() {
     link.download = `vilarejo-isometrico-${safeSeed}.png`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, 'image/png');
+  } catch (error) {
+    console.error(error);
+    alert('O navegador não conseguiu criar o PNG.');
+  }
 }
 
 form.addEventListener('submit', (event) => { event.preventDefault(); generate(); });

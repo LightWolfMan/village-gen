@@ -2,7 +2,7 @@
 
 ## Estado atual
 
-Esta é uma reescrita integral da aplicação. A versão em uso não importa módulos, assets, modos de câmera ou contratos do protótipo top-down anterior. O produto atual gera assentamentos 2.5D isométricos determinísticos, roda localmente no navegador e não possui dependências de execução além do Node.js usado pelo servidor estático.
+Esta é uma reescrita integral da aplicação. A versão em uso não importa módulos, assets, modos de câmera ou contratos do protótipo top-down anterior. O produto atual gera assentamentos 2.5D isométricos determinísticos, roda localmente no navegador e não possui dependências de execução além do Node.js usado pelo servidor estático. Desde a versão 2.3, o bioma temperado combina terreno procedural com edifícios pré-renderizados no Blender; outros biomas continuam usando o renderer procedural como fallback.
 
 O gerador oferece quatro biomas (campo temperado, sertão árido, planalto nevado e pântano), dois traçados (orgânico e quadras ortogonais), três escalas de assentamento e mapas de 72, 96 ou 128 tiles. Cidades usam 128 tiles automaticamente. Relevo, água, rios opcionais, estradas, pontes, praça, lotes, casas, serviços e objetos de cenário são derivados da seed.
 
@@ -29,7 +29,7 @@ npm run check
 
 `src/core` é determinístico e independente do DOM. Sua API pública principal é `generateVillage(seed, settings)`, que devolve um `VillageMap` serializável. `random.js` contém o PRNG e hashes estáveis; `pathfinding.js` resolve rotas ponderadas; `generator.js` constrói terreno, vias, zoneamento, lotes, edifícios e props; `validation.js` verifica limites, colisões, água, portas, zonas e conectividade.
 
-`src/render/renderer.js` recebe somente o modelo serializável. A projeção padrão usa tiles 32×16 e degraus verticais de 6 pixels. O mapa completo é pré-renderizado em um canvas interno com faces de terreno, água, estradas, pontes, volumes, onze famílias arquitetônicas, sombras e depth sort. A câmera visível faz apenas composição, pan e zoom, mantendo a navegação leve. `setShowZones(boolean)` recompõe o mundo com o overlay funcional sem mover a câmera. A exportação PNG renderiza o mapa inteiro, independentemente do enquadramento atual, e herda o estado do overlay.
+`src/render/renderer.js` recebe somente o modelo serializável. A projeção padrão usa tiles 32×16 e degraus verticais de 6 pixels. O mapa completo é pré-renderizado em um canvas interno com faces de terreno, água, estradas, pontes, sprites ou volumes de contingência, sombras e depth sort. A câmera visível faz apenas composição, pan e zoom, mantendo a navegação leve. `setShowZones(boolean)` recompõe o mundo com o overlay funcional sem mover a câmera. A exportação PNG renderiza o mapa inteiro, independentemente do enquadramento atual, e herda o mesmo pipeline híbrido e o estado do overlay.
 
 `src/app.js` conecta formulário, geração, câmera, métricas e download. `server.mjs` é um servidor local restrito a GET/HEAD, implementado apenas com módulos nativos do Node. Os testes usam `node:test`, sem bibliotecas externas.
 
@@ -45,13 +45,13 @@ As configurações normalizadas são `mapSize`, `biome`, `water`, `rivers`, `lay
 
 ## Direção de arte
 
-Terreno, transições, construções, estradas, pontes, luz e sombras são desenhados proceduralmente no Canvas. Os objetos especiais em `assets/props` foram criados especificamente para este projeto com geração de imagem e pós-processamento local para transparência e escala consistente. Nenhum asset do pacote Ninja Adventure ou de outra biblioteca externa faz parte da versão atual.
+Terreno, transições, estradas, pontes, luz e sombras de contato são desenhados proceduralmente no Canvas. Os objetos especiais em `assets/props` foram criados especificamente para este projeto com geração de imagem e pós-processamento local. Os edifícios temperados em `assets/buildings` são modelos originais gerados por script e pré-renderizados no Blender 4.5.5. Nenhum asset do pacote Ninja Adventure ou de outra biblioteca externa faz parte da versão atual.
 
-O renderizador possui desenhos procedurais de contingência para um arquivo de prop ausente, mas os assets distribuídos localmente são o caminho visual normal. A documentação detalhada dessas imagens fica em `assets/ART.md`.
+O renderizador possui desenhos procedurais de contingência para um arquivo de prop ou edifício ausente. A documentação detalhada dos props fica em `assets/ART.md`; o contrato, a câmera e o comando de reprodução dos edifícios ficam em `assets/buildings/ART.md`.
 
 ### Caminho para alta fidelidade isométrica
 
-A versão 2.2 aproxima o Canvas do acabamento de city-builders isométricos pré-renderizados: edifícios têm fundações de pedra, beirais com espessura, telhas e juntas orientadas pela água do telhado, textura própria por material, detalhes arquitetônicos, soleira ligada ao tile real da porta e sombras de contato em camadas. A meta é reproduzir a leitura visual e a riqueza de volume dessa escola gráfica, sem copiar assets proprietários de jogos comerciais.
+A versão 2.2 aproximou o Canvas do acabamento de city-builders isométricos pré-renderizados. A versão 2.3 concretiza o pipeline híbrido: cinco famílias temperadas possuem quatro orientações pré-renderizadas, materiais, janelas, fundações, telhados e iluminação própria. A meta é reproduzir a leitura visual e a riqueza de volume dessa escola gráfica, sem copiar assets proprietários de jogos comerciais.
 
 O salto seguinte recomendado é manter o mesmo `VillageMap`, substituir apenas a camada de desenho dos prédios e usar sprites obtidos por render ortográfico de modelos 3D livres. O [Medieval Village MegaKit da Quaternius](https://quaternius.com/packs/medievalvillagemegakit.html) é CC0, modular e alinhado a grade, sendo o candidato principal para esse pipeline. Como alternativas menores, o OpenGameArt oferece [edifícios medievais isométricos com fontes Blender](https://opengameart.org/content/isometric-medieval-buildings) e o conjunto modular [Isometric Buildings 1](https://opengameart.org/content/isometric-buildings-1), ambos sob CC0.
 
@@ -61,7 +61,7 @@ O pipeline sugerido é importar somente os modelos efetivamente usados, fixar c�
 
 O validador rejeita edifícios fora do mapa, sobrepostos, sobre água ou na zona errada, portas inválidas, vias fora dos limites e portas sem conexão navegável com a praça. Cada porta deve ser única, estar dentro do mapa, em terreno seco, sobre uma estrada terrestre que não seja ponte, ortogonalmente adjacente à fachada declarada e fora do footprint de qualquer prédio. Props e outras construções não podem ocupar a entrada. Ele também verifica metadados, anchors, bounds, água não zonificada, contiguidade funcional por terra ou ponte, grid ortogonal e ocupação mínima do footprint. A faixa-alvo é de 10–18 casas para povoado, 25–40 para vila e 55–85 para cidade.
 
-Os 24 testes automatizados cobrem determinismo por hash, seeds vazias e longas, faixas de edifícios, serialização, zonas, diversidade arquitetônica, limites, água, colisão, contrato rígido das portas, acesso à praça, landmarks, topologia viária, projeção, geometria das fachadas e telhados, bounds de renderização e servidor local. A bateria padrão percorreu 300 seeds em cerca de 35 segundos nesta revisão, com a geração individual mais lenta abaixo de 500 ms, e a matriz de biomas, traçados e escalas também passou.
+Os 30 testes automatizados cobrem determinismo por hash, seeds vazias e longas, faixas de edifícios, serialização, zonas, diversidade arquitetônica, limites, água, colisão, contrato rígido das portas, acesso à praça, landmarks, topologia viária, projeção, geometria das fachadas e telhados, manifesto Blender, PNGs RGBA, placement raster, bounds, exportação por `OffscreenCanvas` ou `HTMLCanvasElement` e servidor local. A bateria padrão percorreu 300 seeds em cerca de 18 segundos nesta revisão, com a geração individual mais lenta abaixo de 500 ms, e a matriz de biomas, traçados e escalas também passou.
 
 ## Próximas evoluções sugeridas
 
@@ -76,3 +76,5 @@ Em 19 de julho de 2026, o botão “Gerar novo vilarejo” passou a criar uma se
 Ainda em 19 de julho de 2026, a versão 2.1 introduziu zoneamento funcional por tile, topologia ortogonal explícita, metadata de grade e diversidade arquitetônica por bioma e função. A interface passou a nomear o modo “Quadras ortogonais” e ganhou um overlay de zonas com legenda.
 
 Na versão 2.2, entradas passaram a ser recursos reservados do mapa. O placement tenta primeiro fachadas visíveis ao sul e ao leste e só usa norte ou oeste como fallback; a validação impede água, pontes, props, edifícios, duplicatas e incoerência entre porta e orientação. O renderer passou a desenhar portas apenas na fachada verdadeira, além de ganhar fundações, beirais, textura de materiais e sombras mais profundas.
+
+Na versão 2.3, Blender 4.5 passou a gerar vinte sprites originais para cottage, townhouse, workshop, civic e farmstead no campo temperado. Um manifesto fornece âncoras, footprint e porta visual; o renderer carrega tudo localmente, dimensiona sem deformação e volta automaticamente à geometria Canvas quando um arquivo ou família não está disponível. O pipeline completo acrescenta cerca de 542 KiB ao aplicativo e não introduz dependências de runtime.

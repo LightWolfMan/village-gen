@@ -111,6 +111,101 @@ const ART_MANIFEST = Object.freeze({
 });
 
 const ART = new Map();
+const BUILDING_ART = new Map();
+
+const BUILDING_SPRITE_FAMILIES = new Set(['cottage', 'townhouse', 'workshop', 'civic', 'farmstead']);
+const BUILDING_SPRITE_ORIENTATIONS = new Set(['north', 'east', 'south', 'west']);
+
+function buildingSpriteKey(biome, family, orientation) {
+  return `${biome}:${family}:${orientation}`;
+}
+
+function normalizedBuildingSpriteFamily(building, biome) {
+  if (biome !== 'temperate') return null;
+  const profile = getArchitectureProfile(building?.architecture, building?.type);
+  const family = profile.key === 'manor' ? 'civic' : profile.key === 'longhouse' ? 'farmstead' : profile.key;
+  return BUILDING_SPRITE_FAMILIES.has(family) ? family : null;
+}
+
+function normalizedBuildingSpriteEntry(entry, basePath) {
+  if (!entry || typeof entry !== 'object') return null;
+  const biome = String(entry.biome ?? 'temperate').toLowerCase();
+  const family = String(entry.family ?? '').toLowerCase();
+  const orientation = String(entry.orientation ?? '').toLowerCase();
+  const width = positive(entry.width, 0);
+  const height = positive(entry.height, 0);
+  const anchorX = finite(entry.anchorX, NaN);
+  const anchorY = finite(entry.anchorY, NaN);
+  const doorX = finite(entry.doorX, NaN);
+  const doorY = finite(entry.doorY, NaN);
+  const footprint = {
+    width: positive(Array.isArray(entry.footprint) ? entry.footprint[0] : entry.footprint?.width, 0),
+    height: positive(Array.isArray(entry.footprint) ? entry.footprint[1] : entry.footprint?.height, 0),
+  };
+  const file = String(entry.src ?? entry.file ?? '').trim();
+  if (biome !== 'temperate' || !BUILDING_SPRITE_FAMILIES.has(family) || !BUILDING_SPRITE_ORIENTATIONS.has(orientation)
+    || !width || !height || !Number.isFinite(anchorX) || !Number.isFinite(anchorY)
+    || !Number.isFinite(doorX) || !Number.isFinite(doorY) || !footprint.width || !footprint.height || !file) return null;
+  const root = String(basePath ?? '/assets/buildings').replace(/\/$/, '');
+  const path = /^(?:https?:)?\/\//.test(file) || file.startsWith('/') ? file : `${root}/${file.replace(/^\.\//, '')}`;
+  return Object.freeze({ biome, family, orientation, width, height, anchorX, anchorY, doorX, doorY, footprint: Object.freeze(footprint), file, path });
+}
+
+/** Normaliza um manifesto gerado pelo pipeline Blender sem depender de DOM ou bitmaps. */
+export function parseBuildingSpriteManifest(manifest, basePath = '/assets/buildings') {
+  const source = Array.isArray(manifest) ? manifest : manifest?.sprites ?? manifest?.entries ?? manifest?.buildings;
+  if (!Array.isArray(source)) return Object.freeze([]);
+  return Object.freeze(source.map((entry) => normalizedBuildingSpriteEntry(entry, basePath)).filter(Boolean));
+}
+
+/** Resolve a arte raster sem alterar os aliases do renderer procedural. */
+export function resolveBuildingSprite(building, biome = 'temperate', sprites = BUILDING_ART) {
+  const normalizedBiome = String(biome ?? 'temperate').toLowerCase();
+  const family = normalizedBuildingSpriteFamily(building, normalizedBiome);
+  const orientation = String(building?.orientation ?? building?.facing ?? 'south').toLowerCase();
+  if (!family || !BUILDING_SPRITE_ORIENTATIONS.has(orientation)) return null;
+  const key = buildingSpriteKey(normalizedBiome, family, orientation);
+  if (sprites instanceof Map) return sprites.get(key) ?? null;
+  const entries = Array.isArray(sprites) ? sprites : parseBuildingSpriteManifest(sprites);
+  return entries.find((entry) => buildingSpriteKey(entry.biome, entry.family, entry.orientation) === key) ?? null;
+}
+
+/** Calcula escala uniforme, ancora no centro do lote e coordenada visual da porta. */
+export function computeBuildingSpritePlacement(building, sprite, options = {}) {
+  if (!building || !sprite) throw new TypeError('Building e sprite sao obrigatorios.');
+  const metrics = optionsWithDefaults(options);
+  const footprint = buildingFootprint(building);
+  const canonical = {
+    width: positive(sprite.footprint?.width, 0),
+    height: positive(sprite.footprint?.height, 0),
+  };
+  const sourceWidth = positive(sprite.width, 0);
+  const sourceHeight = positive(sprite.height, 0);
+  const anchorX = finite(sprite.anchorX, NaN);
+  const anchorY = finite(sprite.anchorY, NaN);
+  const doorX = finite(sprite.doorX, NaN);
+  const doorY = finite(sprite.doorY, NaN);
+  if (!canonical.width || !canonical.height || !sourceWidth || !sourceHeight
+    || !Number.isFinite(anchorX) || !Number.isFinite(anchorY) || !Number.isFinite(doorX) || !Number.isFinite(doorY)) {
+    throw new TypeError('Metadados de sprite invalidos.');
+  }
+  const level = finite(options.level, finite(building.baseLevel, 0));
+  const gridScale = metrics.tileWidth / ISO_DEFAULTS.tileWidth;
+  const scale = Math.min(footprint.width / canonical.width, footprint.height / canonical.height) * gridScale;
+  const anchor = projectPoint(
+    finite(building.x, 0) + (footprint.width - 1) / 2,
+    finite(building.y, 0) + (footprint.height - 1) / 2,
+    level,
+    metrics,
+  );
+  const x = anchor.x - anchorX * scale;
+  const y = anchor.y - anchorY * scale;
+  return Object.freeze({
+    x, y, width: sourceWidth * scale, height: sourceHeight * scale, scale,
+    anchor: Object.freeze(anchor),
+    visualDoor: Object.freeze({ x: x + doorX * scale, y: y + doorY * scale }),
+  });
+}
 
 function optionsWithDefaults(options = {}) {
   return {
@@ -264,6 +359,16 @@ export function computeRenderBounds(map, options = {}) {
       include(point.x - resolved.tileWidth, point.y - vertical - resolved.tileHeight);
       include(point.x + resolved.tileWidth * 1.75, point.y + resolved.tileHeight * 1.75);
     }
+    const sprite = resolveBuildingSprite(building, biomeOf(map), options.buildingSprites ?? BUILDING_ART);
+    if (sprite) {
+      try {
+        const placement = computeBuildingSpritePlacement(building, sprite, { ...resolved, level });
+        include(placement.x, placement.y);
+        include(placement.x + placement.width, placement.y + placement.height);
+      } catch {
+        // Manifestos incompletos nunca impedem o fallback procedural.
+      }
+    }
   }
 
   for (const prop of map.props ?? []) {
@@ -293,6 +398,22 @@ function makeCanvas(width, height, supplied) {
   canvas.width = width;
   canvas.height = height;
   return canvas;
+}
+
+/** Serializa HTMLCanvasElement ou OffscreenCanvas em PNG. */
+export async function canvasToPngBlob(canvas) {
+  if (!canvas) throw new TypeError('Canvas obrigatorio para exportacao.');
+  if (typeof canvas.convertToBlob === 'function') {
+    const blob = await canvas.convertToBlob({ type: 'image/png' });
+    if (!blob) throw new Error('O navegador nao conseguiu criar o PNG.');
+    return blob;
+  }
+  if (typeof canvas.toBlob === 'function') {
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('O navegador nao conseguiu criar o PNG.');
+    return blob;
+  }
+  throw new TypeError('Este canvas nao oferece serializacao PNG.');
 }
 
 function polygon(ctx, fill, points, stroke = null, lineWidth = 1) {
@@ -779,7 +900,49 @@ function drawVisibleDoor(ctx, building, wall, material, placement, state) {
   ctx.fillRect(Math.round(knob.x + ux * .45), Math.round(knob.y + uy * .45), 1, 1);
 }
 
+function drawRasterBuilding(ctx, building, sprite, state) {
+  if (!sprite?.image) return false;
+  const level = finite(building.baseLevel, levelAt(state.map, building.x, building.y));
+  let placement;
+  try {
+    placement = computeBuildingSpritePlacement(building, sprite, { ...state.metrics, level });
+  } catch {
+    return false;
+  }
+  drawDoorThreshold(ctx, building, state);
+  const visualDoor = {
+    x: placement.visualDoor.x + state.metrics.originX,
+    y: placement.visualDoor.y + state.metrics.originY,
+  };
+  if (building.door) {
+    const doorX = finite(building.door.x, NaN);
+    const doorY = finite(building.door.y, NaN);
+    if (Number.isFinite(doorX) && Number.isFinite(doorY)) {
+      const logicalDoor = localPoint(doorX, doorY, levelAt(state.map, doorX, doorY), state);
+      ctx.save();
+      ctx.globalAlpha = .92;
+      line(ctx, '#77674f', Math.max(3, state.metrics.tileHeight * .32), [logicalDoor, visualDoor]);
+      line(ctx, 'rgba(218,199,157,.72)', 1, [logicalDoor, visualDoor]);
+      ctx.restore();
+    }
+  }
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(
+    sprite.image,
+    Math.round(placement.x + state.metrics.originX),
+    Math.round(placement.y + state.metrics.originY),
+    Math.max(1, Math.round(placement.width)),
+    Math.max(1, Math.round(placement.height)),
+  );
+  ctx.restore();
+  return true;
+}
+
 function drawBuilding(ctx, building, state) {
+  const sprite = resolveBuildingSprite(building, biomeOf(state.map), state.buildingSprites);
+  if (drawRasterBuilding(ctx, building, sprite, state)) return;
   const c = buildingCorners(building, state);
   const pixels = buildingPixels(building, state.metrics);
   const wallKey = MATERIAL_ALIASES[building.material] ?? building.material;
@@ -957,7 +1120,8 @@ function ambientColor(biome) {
 
 /** Renderiza o mapa completo, independente do enquadramento atual da camera. */
 export function renderVillageToCanvas(map, options = {}) {
-  const metrics = computeRenderBounds(map, options);
+  const buildingSprites = options.buildingSprites ?? BUILDING_ART;
+  const metrics = computeRenderBounds(map, { ...options, buildingSprites });
   const canvas = makeCanvas(metrics.width, metrics.height, options.canvas);
   const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) throw new Error('Contexto Canvas 2D indisponivel.');
@@ -966,7 +1130,7 @@ export function renderVillageToCanvas(map, options = {}) {
   ctx.fillStyle = biome === 'snowy' ? '#d5e0df' : biome === 'arid' ? '#b9955f' : '#294737';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const state = { map, metrics, showZones: options.showZones === true };
+  const state = { map, metrics, showZones: options.showZones === true, buildingSprites };
   const roads = new Map((map.roads ?? []).map((road) => [`${road.x},${road.y}`, road]));
   const buildingsByDepth = new Map();
   const propsByDepth = new Map();
@@ -1024,15 +1188,38 @@ function loadImage(path) {
   });
 }
 
-/** Carrega props opcionais. Falhas sao deliberadamente substituidas por arte procedural. */
-export async function loadArtAssets(basePath = '/assets/props') {
+/** Carrega o manifesto e os sprites Blender; qualquer falha preserva o procedural. */
+export async function loadBuildingArtAssets(manifestPath = '/assets/buildings/manifest.json') {
+  if (typeof fetch === 'undefined') return Object.fromEntries(BUILDING_ART.entries());
+  try {
+    const response = await fetch(manifestPath);
+    if (!response.ok) return Object.fromEntries(BUILDING_ART.entries());
+    const manifest = await response.json();
+    const slash = String(manifestPath).lastIndexOf('/');
+    const basePath = slash >= 0 ? String(manifestPath).slice(0, slash) : '/assets/buildings';
+    const entries = parseBuildingSpriteManifest(manifest, basePath);
+    await Promise.all(entries.map(async (entry) => {
+      const key = buildingSpriteKey(entry.biome, entry.family, entry.orientation);
+      if (BUILDING_ART.has(key)) return;
+      const image = await loadImage(entry.path);
+      if (image) BUILDING_ART.set(key, Object.freeze({ ...entry, image }));
+    }));
+  } catch {
+    // O renderer procedural e o fallback oficial para manifesto ausente/invalido.
+  }
+  return Object.fromEntries(BUILDING_ART.entries());
+}
+
+/** Carrega props e predios opcionais antes da primeira renderizacao do mapa. */
+export async function loadArtAssets(basePath = '/assets/props', buildingManifestPath = '/assets/buildings/manifest.json') {
   const entries = Object.entries(ART_MANIFEST);
-  await Promise.all(entries.map(async ([key, originalPath]) => {
+  const props = Promise.all(entries.map(async ([key, originalPath]) => {
     if (ART.has(key)) return;
     const file = originalPath.slice(originalPath.lastIndexOf('/') + 1);
     const image = await loadImage(`${String(basePath).replace(/\/$/, '')}/${file}`);
     if (image) ART.set(key, image);
   }));
+  await Promise.all([props, loadBuildingArtAssets(buildingManifestPath)]);
   return Object.fromEntries(ART.entries());
 }
 
