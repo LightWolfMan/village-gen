@@ -54,3 +54,7 @@ Os 17 testes automatizados cobrem determinismo por hash, seeds vazias e longas, 
 O modelo já permite adicionar exportação JSON sem acoplar o núcleo à interface. A evolução natural para jogo é criar uma malha navegável derivada de terreno, vias, portas e pontes, introduzir um personagem com colisão e usar os IDs estáveis de edifícios como pontos de interação. Interiores podem ser mapas separados derivados de uma sub-seed do edifício, evitando aumentar o peso do mapa externo.
 
 Outras evoluções úteis são chunks para mapas maiores que 128, clima animado por bioma, ciclos de luz, editor manual de lotes, conjuntos adicionais de telhados e fachadas, população simulada e persistência de alterações do jogador. Essas extensões devem consumir o `VillageMap` atual em vez de inserir estado de jogo no gerador.
+
+## Correções recentes
+
+Em 19 de julho de 2026, o botão “Gerar novo vilarejo” passou a criar uma seed nova antes de cada geração; pressionar Enter no campo continua regenerando deliberadamente a seed digitada. O renderer também recebeu geometria independente para as duas orientações de telhado, removendo faces triangulares sobrepostas e adicionando cursos de telha alinhados entre cumeeira e beiral.

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeRenderBounds, projectPoint } from '../src/render/renderer.js';
+import { computeRenderBounds, computeRoofGeometry, projectPoint } from '../src/render/renderer.js';
 
 function sampleMap() {
   return {
@@ -87,4 +87,25 @@ test('bounds crescem com predio mais alto e rejeitam mapas invalidos', () => {
   assert.ok(computeRenderBounds(high).height > computeRenderBounds(low).height);
   assert.throws(() => computeRenderBounds({ width: 0, height: 1 }), /VillageMap invalido/);
   assert.throws(() => computeRenderBounds(null), /VillageMap invalido/);
+});
+
+test('geometria do telhado troca as faces sem criar triangulo sobreposto', () => {
+  const base = {
+    n: { x: 0, y: -8 }, e: { x: 16, y: 0 },
+    s: { x: 0, y: 8 }, w: { x: -16, y: 0 },
+  };
+  const horizontal = computeRoofGeometry(base, -10, true);
+  assert.deepEqual(horizontal.ridgeA, { x: -8, y: -14 });
+  assert.deepEqual(horizontal.ridgeB, { x: 8, y: -6 });
+  assert.deepEqual(horizontal.lightFace, [base.n, base.e, horizontal.ridgeB, horizontal.ridgeA]);
+  assert.deepEqual(horizontal.darkFace, [horizontal.ridgeA, horizontal.ridgeB, base.s, base.w]);
+  assert.equal(horizontal.lightFace.length, 4);
+  assert.equal(horizontal.darkFace.length, 4);
+
+  const vertical = computeRoofGeometry(base, -10, false);
+  assert.deepEqual(vertical.ridgeA, { x: 8, y: -14 });
+  assert.deepEqual(vertical.ridgeB, { x: -8, y: -6 });
+  assert.deepEqual(vertical.lightFace, [base.n, vertical.ridgeA, vertical.ridgeB, base.w]);
+  assert.deepEqual(vertical.darkFace, [vertical.ridgeA, base.e, base.s, vertical.ridgeB]);
+  assert.equal(vertical.gables.length, 2);
 });

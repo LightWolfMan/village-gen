@@ -359,6 +359,58 @@ function shifted(point, dy) { return { x: point.x, y: point.y + dy }; }
 
 function mixPoint(a, b, t = .5) { return { x: a.x * (1 - t) + b.x * t, y: a.y * (1 - t) + b.y * t }; }
 
+/**
+ * Constroi um telhado de duas aguas sobre o paralelogramo isometrico da casa.
+ * As faces precisam mudar quando o eixo longo muda: reutilizar os mesmos quatro
+ * vertices nos dois casos cria poligonos cruzados e a conhecida "telha
+ * triangular" sobreposta no meio do telhado.
+ */
+export function computeRoofGeometry(base, roofLift, longX = true) {
+  if (!base || !base.n || !base.e || !base.s || !base.w) throw new TypeError('Base de telhado invalida.');
+  const lift = finite(roofLift, 0);
+  if (longX) {
+    const ridgeA = shifted(mixPoint(base.n, base.w, .5), lift);
+    const ridgeB = shifted(mixPoint(base.e, base.s, .5), lift);
+    return {
+      ridgeA, ridgeB,
+      lightFace: [base.n, base.e, ridgeB, ridgeA],
+      darkFace: [ridgeA, ridgeB, base.s, base.w],
+      lightEave: [base.n, base.e],
+      darkEave: [base.w, base.s],
+      gables: [[base.n, ridgeA, base.w], [base.e, base.s, ridgeB]],
+    };
+  }
+  const ridgeA = shifted(mixPoint(base.n, base.e, .5), lift);
+  const ridgeB = shifted(mixPoint(base.w, base.s, .5), lift);
+  return {
+    ridgeA, ridgeB,
+    lightFace: [base.n, ridgeA, ridgeB, base.w],
+    darkFace: [ridgeA, base.e, base.s, ridgeB],
+    lightEave: [base.n, base.w],
+    darkEave: [base.e, base.s],
+    gables: [[base.n, base.e, ridgeA], [base.w, ridgeB, base.s]],
+  };
+}
+
+function drawRoofCourses(ctx, ridgeA, ridgeB, eaveA, eaveB, color, width = 1) {
+  for (let row = 1; row <= 3; row += 1) {
+    const t = row / 4;
+    const start = mixPoint(ridgeA, eaveA, t);
+    const end = mixPoint(ridgeB, eaveB, t);
+    line(ctx, color, width, [start, end]);
+    const jointCount = Math.max(2, Math.round(Math.hypot(end.x - start.x, end.y - start.y) / 12));
+    for (let joint = 1; joint < jointCount; joint += 1) {
+      const u = (joint + (row % 2) * .5) / jointCount;
+      if (u >= 1) continue;
+      const point = mixPoint(start, end, u);
+      const towardEave = mixPoint(ridgeA, eaveA, Math.min(1, t + .12));
+      const dx = (towardEave.x - start.x) * .14;
+      const dy = (towardEave.y - start.y) * .14;
+      line(ctx, color, width, [point, { x: point.x + dx, y: point.y + dy }]);
+    }
+  }
+}
+
 function drawBuildingShadow(ctx, building, state) {
   const c = buildingCorners(building, state);
   const vertical = buildingPixels(building, state.metrics).total;
@@ -425,18 +477,15 @@ function drawBuilding(ctx, building, state) {
   const roofBase = { n: wall.nTop, e: wall.eTop, s: wall.sTop, w: wall.wTop };
   const roofLift = -pixels.roof;
   const longX = c.footprint.width >= c.footprint.height;
-  let ridgeA, ridgeB;
-  if (longX) {
-    ridgeA = shifted(mixPoint(roofBase.n, roofBase.w, .5), roofLift);
-    ridgeB = shifted(mixPoint(roofBase.e, roofBase.s, .5), roofLift);
-  } else {
-    ridgeA = shifted(mixPoint(roofBase.n, roofBase.e, .5), roofLift);
-    ridgeB = shifted(mixPoint(roofBase.w, roofBase.s, .5), roofLift);
+  const roof = computeRoofGeometry(roofBase, roofLift, longX);
+  for (let index = 0; index < roof.gables.length; index += 1) {
+    polygon(ctx, index === 0 ? mat.wall : mat.shade, roof.gables[index], mat.trim);
   }
-  polygon(ctx, mat.roofDark, [ridgeA, ridgeB, roofBase.s, roofBase.w], tint(mat.roofDark, -10));
-  polygon(ctx, mat.roof, [roofBase.n, roofBase.e, ridgeB, ridgeA], tint(mat.roofDark, -4));
-  polygon(ctx, mat.roofLit, longX ? [ridgeB, roofBase.e, roofBase.s] : [ridgeA, roofBase.n, roofBase.w], tint(mat.roof, -12));
-  line(ctx, tint(mat.roofLit, 24), 2, [ridgeA, ridgeB]);
+  polygon(ctx, mat.roofLit, roof.lightFace, tint(mat.roofDark, -4));
+  polygon(ctx, mat.roofDark, roof.darkFace, tint(mat.roofDark, -10));
+  drawRoofCourses(ctx, roof.ridgeA, roof.ridgeB, roof.lightEave[0], roof.lightEave[1], 'rgba(74,45,28,.24)');
+  drawRoofCourses(ctx, roof.ridgeA, roof.ridgeB, roof.darkEave[0], roof.darkEave[1], 'rgba(18,18,16,.30)');
+  line(ctx, tint(mat.roofLit, 24), 2, [roof.ridgeA, roof.ridgeB]);
   line(ctx, 'rgba(20,18,16,.35)', 2, [roofBase.w, roofBase.s, roofBase.e]);
 
   const facing = building.orientation ?? building.facing ?? 'south';
@@ -453,7 +502,7 @@ function drawBuilding(ctx, building, state) {
     { x: groundMid.x + 4, y: groundMid.y }, { x: groundMid.x - 4, y: groundMid.y - 3 },
   ], mat.trim);
 
-  drawBuildingFeature(ctx, building, { ...wall, ridgeA, ridgeB, pixels }, state);
+  drawBuildingFeature(ctx, building, { ...wall, ridgeA: roof.ridgeA, ridgeB: roof.ridgeB, pixels }, state);
 }
 
 function drawBuildingFeature(ctx, building, shape, state) {

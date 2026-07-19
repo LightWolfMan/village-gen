@@ -15,6 +15,7 @@ const sizeInput = $('#size-input');
 const waterInput = $('#water-input');
 const riverInput = $('#river-input');
 const loading = $('#loading');
+const generateButton = $('#generate-button');
 
 const names = ['Aurora', 'Cedro', 'Colina', 'Luar', 'Pedra', 'Riacho', 'Carvalho', 'Bruma', 'Raposa', 'Trigo'];
 const suffixes = ['do Norte', 'Dourado', 'da Ponte', 'Sereno', 'Verde', 'Antigo', 'da Serra', 'do Vale'];
@@ -22,7 +23,8 @@ const suffixes = ['do Norte', 'Dourado', 'da Ponte', 'Sereno', 'Verde', 'Antigo'
 function randomSeed() {
   const data = new Uint32Array(2);
   crypto.getRandomValues(data);
-  return `${names[data[0] % names.length]} ${suffixes[data[1] % suffixes.length]}-${(data[0] ^ data[1]).toString(36).slice(0, 5)}`;
+  const token = ((data[0] ^ data[1]) >>> 0).toString(36).slice(0, 5);
+  return `${names[data[0] % names.length]} ${suffixes[data[1] % suffixes.length]}-${token}`;
 }
 
 function settingsFromForm() {
@@ -61,11 +63,14 @@ function updateStats(elapsed) {
 }
 
 async function generate() {
+  const seed = seedInput.value;
+  const settings = settingsFromForm();
   loading.hidden = false;
+  generateButton.disabled = true;
   await new Promise((resolve) => requestAnimationFrame(resolve));
   const start = performance.now();
   try {
-    village = generateVillage(seedInput.value, settingsFromForm());
+    village = generateVillage(seed, settings);
     renderer.setMap(village);
     updateStats(performance.now() - start);
   } catch (error) {
@@ -73,6 +78,7 @@ async function generate() {
     alert(`Não foi possível gerar o mapa: ${error.message}`);
   } finally {
     loading.hidden = true;
+    generateButton.disabled = false;
   }
 }
 
@@ -92,6 +98,7 @@ function downloadPng() {
 }
 
 form.addEventListener('submit', (event) => { event.preventDefault(); generate(); });
+generateButton.addEventListener('click', () => { seedInput.value = randomSeed(); });
 $('#random-seed').addEventListener('click', () => { seedInput.value = randomSeed(); generate(); });
 $('#export-button').addEventListener('click', downloadPng);
 $('#center-button').addEventListener('click', () => renderer.center());
