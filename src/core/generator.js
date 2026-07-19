@@ -26,6 +26,43 @@ const SETTLEMENTS = Object.freeze({
 
 const MAP_SIZES = [72, 96, 128];
 const DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const ZONE_LABELS = Object.freeze({
+  residential: "Bairro residencial",
+  commercial: "Bairro mercantil",
+  craft: "Bairro dos oficios",
+  civic: "Centro civico",
+  agricultural: "Cintura agricola",
+});
+const TYPE_ZONES = Object.freeze({
+  house: ["residential", "agricultural", "craft", "commercial"],
+  inn: ["commercial"], shop: ["commercial"], market: ["commercial"],
+  smithy: ["craft"], mill: ["craft", "agricultural"],
+  hall: ["civic"], chapel: ["civic"], tower: ["civic"],
+});
+const BIOME_STYLES = Object.freeze({
+  temperate: {
+    residential: ["timber-frame", "stone-cottage", "wattle-cottage"], agricultural: ["farmstead", "timber-longhouse"],
+    materials: ["timber", "plaster", "fieldstone"], roofs: ["thatch", "clay-tile", "wood-shingle"],
+  },
+  arid: {
+    residential: ["adobe-courtyard", "sandstone-house", "mudbrick-house"], agricultural: ["desert-farmstead", "mudbrick-compound"],
+    materials: ["adobe", "sandstone", "mudbrick"], roofs: ["flat-earth", "clay-tile", "reed-mat"],
+  },
+  snowy: {
+    residential: ["alpine-chalet", "stone-lodge", "timber-cabin"], agricultural: ["snow-longhouse", "mountain-farmstead"],
+    materials: ["pine-timber", "granite", "lime-plaster"], roofs: ["steep-slate", "steep-wood", "heavy-thatch"],
+  },
+  wetland: {
+    residential: ["stilt-house", "reed-cottage", "raised-timber-house"], agricultural: ["marsh-farmstead", "raised-longhouse"],
+    materials: ["timber", "wattle", "riverstone"], roofs: ["reed-thatch", "wood-shingle", "moss-thatch"],
+  },
+});
+const SERVICE_ARCHITECTURES = Object.freeze({
+  inn: ["coaching-inn", "gabled-tavern"], shop: ["merchant-house", "arcaded-shop"],
+  smithy: ["forge-workshop", "stone-smithy"], hall: ["guildhall", "manor-hall"],
+  chapel: ["parish-chapel", "stone-sanctuary"], market: ["covered-market", "trading-hall"],
+  mill: ["water-mill", "post-mill"], tower: ["watchtower", "gate-tower"],
+});
 const keyOf = (x, y) => `${x},${y}`;
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 
@@ -206,6 +243,7 @@ function createGridRoads(map, random, roadMap) {
   const centerY = map.plaza.y + Math.floor(map.plaza.height / 2);
   const spacing = random.int(7, 9);
   const radius = Math.floor(map.width * (map.settings.settlement === "hamlet" ? 0.2 : 0.34));
+  map.gridSpec = { centerX, centerY, spacing, radius };
   addLine(roadMap, 1, centerY, map.width - 2, centerY, "main");
   addLine(roadMap, centerX, 1, centerX, map.height - 2, "main");
   for (let x = centerX - Math.floor(radius / spacing) * spacing; x <= centerX + radius; x += spacing) {
@@ -245,6 +283,146 @@ function finalizeRoads(map, roadMap) {
   }).sort((a, b) => a.y - b.y || a.x - b.x);
 }
 
+function nearestRoadAnchor(map, target, used = new Set()) {
+  let best = map.roads[0];
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const road of map.roads) {
+    if (used.has(keyOf(road.x, road.y))) continue;
+    const distance = Math.abs(road.x - target.x) + Math.abs(road.y - target.y);
+    if (distance < bestDistance) { best = road; bestDistance = distance; }
+  }
+  return { x: best?.x ?? target.x, y: best?.y ?? target.y };
+}
+
+function createZones(map) {
+  const center = { x: map.plaza.x + Math.floor(map.plaza.width / 2), y: map.plaza.y + Math.floor(map.plaza.height / 2) };
+  const radius = map.settings.settlement === "hamlet" ? 17 : map.settings.settlement === "town" ? 48 : 32;
+  const targets = {
+    civic: center,
+    commercial: { x: center.x + Math.round(radius * 0.66), y: center.y - Math.round(radius * 0.08) },
+    craft: { x: center.x - Math.round(radius * 0.68), y: center.y + Math.round(radius * 0.12) },
+    agricultural: { x: center.x, y: center.y + Math.round(radius * 0.76) },
+    residential: { x: center.x, y: center.y - Math.round(radius * 0.75) },
+  };
+  const types = ["civic", "commercial", "craft", "agricultural", "residential"];
+  const usedAnchors = new Set();
+  const anchors = {};
+  for (const type of types) {
+    anchors[type] = nearestRoadAnchor(map, targets[type], usedAnchors);
+    usedAnchors.add(keyOf(anchors[type].x, anchors[type].y));
+  }
+  for (const anchor of Object.values(anchors)) {
+    const index = anchor.y * map.width + anchor.x;
+    if (map.terrain[index] === "water") {
+      map.terrain[index] = BIOMES[map.settings.biome].ground;
+      map.heightLevel[index] = map.plaza.level;
+    }
+  }
+  const zoneMap = new Array(map.width * map.height).fill("none");
+  const minimumX = clamp(center.x - radius, 1, map.width - 2);
+  const maximumX = clamp(center.x + radius, 1, map.width - 2);
+  const minimumY = clamp(center.y - radius, 1, map.height - 2);
+  const maximumY = clamp(center.y + radius, 1, map.height - 2);
+  const queue = [];
+  const districtCore = map.settings.settlement === "hamlet" ? 6 : map.settings.settlement === "town" ? 9 : 8;
+  for (const type of types.filter((item) => item !== "civic")) {
+    const anchor = anchors[type];
+    for (let y = anchor.y - districtCore; y <= anchor.y + districtCore; y += 1) {
+      for (let x = anchor.x - districtCore; x <= anchor.x + districtCore; x += 1) {
+        if (Math.abs(x - anchor.x) + Math.abs(y - anchor.y) > districtCore) continue;
+        if (x < minimumX || x > maximumX || y < minimumY || y > maximumY) continue;
+        const index = y * map.width + x;
+        if (zoneMap[index] !== "none") continue;
+        zoneMap[index] = type;
+        queue.push({ x, y, type });
+      }
+    }
+  }
+  // Civic buildings need actual frontage outside the reserved plaza. Seeding a
+  // compact connected civic core guarantees minimum parcel capacity before
+  // the other districts expand around it.
+  const civicRadius = map.settings.settlement === "hamlet" ? 8 : map.settings.settlement === "town" ? 18 : 14;
+  for (let y = center.y - civicRadius; y <= center.y + civicRadius; y += 1) {
+    for (let x = center.x - civicRadius; x <= center.x + civicRadius; x += 1) {
+      if (Math.abs(x - center.x) + Math.abs(y - center.y) > civicRadius) continue;
+      if (x < minimumX || x > maximumX || y < minimumY || y > maximumY) continue;
+      const index = y * map.width + x;
+      if (zoneMap[index] !== "none") continue;
+      zoneMap[index] = "civic";
+      queue.push({ x, y, type: "civic" });
+    }
+  }
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const cell = queue[cursor];
+    for (const [dx, dy] of DIRECTIONS) {
+      const x = cell.x + dx;
+      const y = cell.y + dy;
+      if (x < minimumX || x > maximumX || y < minimumY || y > maximumY) continue;
+      const index = y * map.width + x;
+      if (zoneMap[index] !== "none") continue;
+      zoneMap[index] = cell.type;
+      queue.push({ x, y, type: cell.type });
+    }
+  }
+  // The plaza is always civic, irrespective of a Voronoi tie at its edge.
+  for (let y = map.plaza.y; y < map.plaza.y + map.plaza.height; y += 1) {
+    for (let x = map.plaza.x; x < map.plaza.x + map.plaza.width; x += 1) zoneMap[y * map.width + x] = "civic";
+  }
+  const zones = types.map((type) => {
+    let minX = map.width; let minY = map.height; let maxX = -1; let maxY = -1; let cellCount = 0;
+    for (let index = 0; index < zoneMap.length; index += 1) {
+      if (zoneMap[index] !== type) continue;
+      const x = index % map.width; const y = Math.floor(index / map.width);
+      minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); cellCount += 1;
+    }
+    return { id: `zone-${type}`, type, label: ZONE_LABELS[type], anchor: anchors[type], cellCount, bounds: { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 }, bridgeLinks: [] };
+  });
+  return { zoneMap, zones };
+}
+
+function finalizeZones(map) {
+  const bridgeLinks = Object.fromEntries(map.zones.map((zone) => [zone.type, []]));
+  for (const road of map.roads) {
+    if (!road.bridge) continue;
+    const index = road.y * map.width + road.x;
+    const type = map.zoneMap[index];
+    if (bridgeLinks[type]) bridgeLinks[type].push(index);
+  }
+  for (let index = 0; index < map.zoneMap.length; index += 1) if (map.terrain[index] === "water") map.zoneMap[index] = "none";
+  // Remove isolated land fragments while treating same-zone bridge tiles as
+  // connectors. Exporters therefore receive contiguous, buildable districts
+  // and never classify open water as a lot.
+  for (const zone of map.zones) {
+    const anchorIndex = zone.anchor.y * map.width + zone.anchor.x;
+    const traversable = new Set(bridgeLinks[zone.type]);
+    for (const road of map.roads) traversable.add(road.y * map.width + road.x);
+    for (let index = 0; index < map.zoneMap.length; index += 1) if (map.zoneMap[index] === zone.type) traversable.add(index);
+    if (!traversable.has(anchorIndex)) continue;
+    const reached = new Set([anchorIndex]);
+    const queue = [anchorIndex];
+    for (let cursor = 0; cursor < queue.length; cursor += 1) {
+      const index = queue[cursor]; const x = index % map.width; const y = Math.floor(index / map.width);
+      for (const [dx, dy] of DIRECTIONS) {
+        const nx = x + dx; const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
+        const next = ny * map.width + nx;
+        if (traversable.has(next) && !reached.has(next)) { reached.add(next); queue.push(next); }
+      }
+    }
+    for (const index of traversable) if (!reached.has(index) && map.zoneMap[index] === zone.type) map.zoneMap[index] = "none";
+    bridgeLinks[zone.type] = bridgeLinks[zone.type].filter((index) => reached.has(index));
+  }
+  map.zones = map.zones.map((zone) => {
+    let minX = map.width; let minY = map.height; let maxX = -1; let maxY = -1; let cellCount = 0;
+    for (let index = 0; index < map.zoneMap.length; index += 1) {
+      if (map.zoneMap[index] !== zone.type) continue;
+      const x = index % map.width; const y = Math.floor(index / map.width);
+      minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); cellCount += 1;
+    }
+    return { ...zone, cellCount, bounds: { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 }, bridgeLinks: bridgeLinks[zone.type] };
+  });
+}
+
 function rectangleClear(map, reserved, x, y, width, height) {
   if (x < 2 || y < 2 || x + width >= map.width - 2 || y + height >= map.height - 2) return false;
   for (let py = y; py < y + height; py += 1) {
@@ -270,6 +448,51 @@ function candidateAtRoad(road, side, width, height) {
   return { x: road.x + 1, y: road.y - Math.floor(height / 2), door: { x: road.x, y: road.y }, orientation: "west" };
 }
 
+function zoneForFootprint(map, candidate, width, height, allowedZones) {
+  const centerX = candidate.x + Math.floor((width - 1) / 2);
+  const centerY = candidate.y + Math.floor((height - 1) / 2);
+  const zone = map.zoneMap[centerY * map.width + centerX];
+  if (!allowedZones.includes(zone)) return null;
+  let matching = 0;
+  for (let y = candidate.y; y < candidate.y + height; y += 1) {
+    for (let x = candidate.x; x < candidate.x + width; x += 1) if (map.zoneMap[y * map.width + x] === zone) matching += 1;
+  }
+  return matching >= Math.ceil(width * height * 0.6) ? zone : null;
+}
+
+function dimensionOptions(type, random) {
+  if (type === "house") return [[random.int(2, 4), random.int(2, 3)], [3, 2], [2, 2]];
+  const sizes = {
+    inn: [[5, 4], [4, 3]], shop: [[4, 3], [3, 3]], smithy: [[4, 3], [3, 3]], hall: [[5, 4], [4, 4]],
+    chapel: [[4, 5], [3, 4]], market: [[5, 4], [4, 3]], mill: [[4, 4], [3, 4]], tower: [[3, 3]],
+  };
+  return sizes[type] || [[3, 3]];
+}
+
+function buildingStyle(map, type, zone, random) {
+  const biomeStyle = BIOME_STYLES[map.settings.biome];
+  let archetypes;
+  if (type === "house") {
+    archetypes = zone === "craft"
+      ? [...biomeStyle.residential, "artisan-house", "workshop-dwelling"]
+      : zone === "commercial" ? [...biomeStyle.residential, "merchant-dwelling", "shop-house"] : [...biomeStyle[zone]];
+    if (map.settings.settlement === "town" && zone === "residential") archetypes.push("urban-townhouse", "artisan-rowhouse");
+    if (map.settings.settlement === "hamlet") archetypes.push(zone === "agricultural" ? "croft-farm" : "rural-cottage");
+  } else archetypes = SERVICE_ARCHITECTURES[type];
+  const materialPool = zone === "civic"
+    ? [biomeStyle.materials[1], biomeStyle.materials[1], biomeStyle.materials[2]]
+    : zone === "craft" ? [biomeStyle.materials[0], biomeStyle.materials[1]] : biomeStyle.materials;
+  const maximumStoreys = map.settings.settlement === "town" ? 3 : map.settings.settlement === "village" ? 2 : 1;
+  let storeys = type === "tower" ? 3 : type === "chapel" ? 2 : random.int(1, maximumStoreys);
+  if (zone === "agricultural" && type === "house") storeys = 1;
+  return {
+    architecture: random.pick(archetypes),
+    material: random.pick(materialPool),
+    roof: random.pick(biomeStyle.roofs),
+    storeys,
+  };
+}
+
 function placeBuildings(map, random, roadMap) {
   const reserved = new Set();
   // A building may touch its access road, but its footprint never replaces a
@@ -288,10 +511,10 @@ function placeBuildings(map, random, roadMap) {
   const types = [...settlement.services, ...new Array(houseTarget).fill("house")];
   const buildings = [];
   for (const type of types) {
-    const isHouse = type === "house";
     let placed = false;
-    const preferred = isHouse ? [random.int(2, 3), random.int(2, 3)] : [random.int(3, 4), random.int(3, 4)];
-    const dimensions = isHouse ? [preferred, [2, 2]] : [preferred, [3, 3]];
+    const isHouse = type === "house";
+    const dimensions = dimensionOptions(type, random);
+    const allowedZones = TYPE_ZONES[type];
     // Enumerate every frontage exactly once. Random side sampling could miss a
     // valid final lot even after thousands of attempts on a crowded village.
     const spread = isHouse ? map.width * 0.18 : 3;
@@ -305,6 +528,8 @@ function placeBuildings(map, random, roadMap) {
         if (placed) break;
         const candidate = candidateAtRoad(road, side, width, height);
         if (!rectangleClear(map, reserved, candidate.x, candidate.y, width, height)) continue;
+        const zone = zoneForFootprint(map, candidate, width, height, allowedZones);
+        if (!zone) continue;
       const levels = [];
       for (let y = candidate.y; y < candidate.y + height; y += 1) for (let x = candidate.x; x < candidate.x + width; x += 1) {
         const level = map.heightLevel[y * map.width + x];
@@ -313,18 +538,20 @@ function placeBuildings(map, random, roadMap) {
       levels.sort((a, b) => a - b);
       const baseLevel = levels[Math.floor(levels.length / 2)] || map.plaza.level;
       flattenArea(map, candidate.x, candidate.y, width, height, baseLevel, BIOMES[map.settings.biome].ground);
+      for (let y = candidate.y; y < candidate.y + height; y += 1) {
+        for (let x = candidate.x; x < candidate.x + width; x += 1) map.zoneMap[y * map.width + x] = zone;
+      }
       const doorIndex = candidate.door.y * map.width + candidate.door.x;
       if (map.terrain[doorIndex] === "water") {
         map.terrain[doorIndex] = BIOMES[map.settings.biome].ground;
         map.heightLevel[doorIndex] = baseLevel;
       }
+      const style = buildingStyle(map, type, zone, random);
       const building = {
         id: `building-${buildings.length + 1}`,
         type, x: candidate.x, y: candidate.y, width, height,
-        door: candidate.door, orientation: candidate.orientation, baseLevel,
-        storeys: type === "tower" ? 3 : type === "house" ? random.int(1, 2) : random.int(1, 2),
-        material: random.pick(map.settings.biome === "arid" ? ["adobe", "stone"] : ["timber", "stone", "plaster"]),
-        roof: random.pick(map.settings.biome === "snowy" ? ["slate", "wood"] : ["thatch", "tile", "wood"]),
+        door: candidate.door, orientation: candidate.orientation, baseLevel, zone,
+        ...style,
         variant: random.int(0, 5),
       };
       buildings.push(building);
@@ -426,7 +653,7 @@ export function generateVillage(seedInput = "", inputSettings = {}) {
   const random = createRandom(`${seed}:v2`);
   const fields = createTerrain(numericSeed, settings);
   const map = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     seed,
     settings,
     width: settings.mapSize,
@@ -434,6 +661,8 @@ export function generateVillage(seedInput = "", inputSettings = {}) {
     waterLine: fields.waterLine,
     terrain: fields.terrain,
     heightLevel: fields.heightLevel,
+    roadTopology: settings.layout === "grid" ? "orthogonal-cardinal" : "organic-cardinal",
+    gridSpec: null,
   };
   if (settings.rivers) carveRiver(numericSeed, map, random.fork("river"));
   map.plaza = choosePlaza(map, random.fork("plaza"));
@@ -445,17 +674,22 @@ export function generateVillage(seedInput = "", inputSettings = {}) {
   else createOrganicRoads(map, random.fork("organic"), roadMap);
   smoothRoadHeights(map, roadMap);
   map.roads = finalizeRoads(map, roadMap);
+  const zoning = createZones(map);
+  map.zoneMap = zoning.zoneMap;
+  map.zones = zoning.zones;
   const placement = placeBuildings(map, random.fork("buildings"), roadMap);
   map.buildings = placement.buildings;
   // Coastal lots may reclaim their single access tile, so bridge metadata is
   // computed once more from the final terrain.
   map.roads = finalizeRoads(map, roadMap);
+  finalizeZones(map);
   map.props = placeProps(map, random.fork("props"), placement.reserved, roadMap, placement.buildings);
   map.stats = {
     houses: map.buildings.filter((building) => building.type === "house").length,
     services: map.buildings.filter((building) => building.type !== "house").length,
     bridges: countBridgeSpans(map.roads),
     terrainCounts: terrainCounts(map.terrain),
+    zoneCounts: Object.fromEntries(map.zones.map((zone) => [zone.type, zone.cellCount])),
   };
   map.validation = validateVillage(map);
   if (!map.validation.valid) throw new Error(`Mapa inválido para a seed ${seed}: ${map.validation.errors.join("; ")}`);

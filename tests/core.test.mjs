@@ -10,12 +10,14 @@ test("contrato v2 é limpo, serializável e determinístico", () => {
   const first = generateVillage("vale-do-sol");
   const second = generateVillage("vale-do-sol");
   assert.equal(digest(first), digest(second));
-  assert.equal(first.schemaVersion, 1);
+  assert.equal(first.schemaVersion, 2);
   assert.deepEqual(first.settings, DEFAULT_SETTINGS);
   assert.equal(first.width, 96);
   assert.equal(first.height, 96);
   assert.equal(first.terrain.length, 96 * 96);
   assert.equal(first.heightLevel.length, 96 * 96);
+  assert.equal(first.zoneMap.length, 96 * 96);
+  assert.equal(first.zones.length, 5);
   assert.doesNotThrow(() => JSON.stringify(first));
   assert.equal("elevation" in first, false);
   assert.equal("moisture" in first, false);
@@ -74,10 +76,69 @@ test("organic e grid são determinísticos, diferentes e conectados", () => {
   assert.equal(digest(grid), digest(generateVillage("traçado", { layout: "grid", rivers: true })));
   assert.equal(organic.validation.valid, true);
   assert.equal(grid.validation.valid, true);
+  assert.equal(grid.roadTopology, "orthogonal-cardinal");
+  assert.equal(organic.roadTopology, "organic-cardinal");
+  assert.deepEqual(Object.keys(grid.gridSpec), ["centerX", "centerY", "spacing", "radius"]);
+  assert.equal(organic.gridSpec, null);
   const centerX = grid.plaza.x + Math.floor(grid.plaza.width / 2);
   const centerY = grid.plaza.y + Math.floor(grid.plaza.height / 2);
   assert.ok(grid.roads.some(({ x, y }) => x === 1 && y === centerY));
   assert.ok(grid.roads.some(({ x, y }) => x === centerX && y === 1));
+});
+
+test("zoneamento medieval é explícito, contíguo e orienta o placement", () => {
+  const allowed = {
+    house: ["residential", "agricultural", "craft", "commercial"], inn: ["commercial"], shop: ["commercial"], market: ["commercial"],
+    smithy: ["craft"], mill: ["craft", "agricultural"], hall: ["civic"], chapel: ["civic"], tower: ["civic"],
+  };
+  const zoneTypes = ["residential", "commercial", "craft", "civic", "agricultural"];
+  const map = generateVillage("distritos-medievais", { settlement: "town", layout: "grid" });
+  assert.deepEqual(new Set(map.zoneMap), new Set(["none", ...zoneTypes]));
+  assert.deepEqual(new Set(map.zones.map(({ type }) => type)), new Set(zoneTypes));
+  assert.equal(map.zoneMap.some((zone, index) => map.terrain[index] === "water" && zone !== "none"), false);
+  for (const zone of map.zones) {
+    assert.equal(zone.cellCount, map.zoneMap.filter((type) => type === zone.type).length);
+    const cells = new Set(map.roads.map(({ x, y }) => y * map.width + x));
+    for (let index = 0; index < map.zoneMap.length; index += 1) if (map.zoneMap[index] === zone.type) cells.add(index);
+    const queue = [zone.anchor.y * map.width + zone.anchor.x];
+    cells.delete(queue[0]);
+    for (let cursor = 0; cursor < queue.length; cursor += 1) {
+      const index = queue[cursor]; const x = index % map.width; const y = Math.floor(index / map.width);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const next = (y + dy) * map.width + x + dx;
+        if (x + dx >= 0 && x + dx < map.width && y + dy >= 0 && y + dy < map.height && cells.delete(next)) queue.push(next);
+      }
+    }
+    assert.equal([...cells].filter((index) => map.zoneMap[index] === zone.type).length, 0, `${zone.type} desconectada`);
+    assert.ok(Array.isArray(zone.bridgeLinks));
+  }
+  for (const building of map.buildings) {
+    assert.ok(allowed[building.type].includes(building.zone), `${building.type} em ${building.zone}`);
+    const centerX = building.x + Math.floor((building.width - 1) / 2);
+    const centerY = building.y + Math.floor((building.height - 1) / 2);
+    assert.equal(map.zoneMap[centerY * map.width + centerX], building.zone);
+    assert.ok(building.architecture.length > 2);
+  }
+});
+
+test("arquitetura varia por bioma, zona, serviço e escala", () => {
+  const architectures = new Set();
+  const materials = new Set();
+  const roofs = new Set();
+  const footprints = new Set();
+  for (const biome of Object.keys(BIOMES)) {
+    for (const settlement of ["hamlet", "village", "town"]) {
+      const map = generateVillage(`arquitetura-${biome}-${settlement}`, { biome, settlement });
+      for (const building of map.buildings) {
+        architectures.add(building.architecture); materials.add(building.material); roofs.add(building.roof);
+        footprints.add(`${building.width}x${building.height}`);
+      }
+    }
+  }
+  assert.ok(architectures.size >= 25, `arquiteturas: ${architectures.size}`);
+  assert.ok(materials.size >= 8, `materiais: ${materials.size}`);
+  assert.ok(roofs.size >= 8, `telhados: ${roofs.size}`);
+  assert.ok(footprints.size >= 7, `footprints: ${footprints.size}`);
 });
 
 test("rios e águas cruzados por ruas geram pontes orientadas", () => {
@@ -127,6 +188,24 @@ test("validação acusa adulterações estruturais", () => {
   assert.ok(validation.errors.some((error) => error.includes("sobreposição")));
   assert.ok(validation.errors.some((error) => error.includes("porta")));
   assert.ok(validation.errors.some((error) => error.includes("0..6")));
+
+  const wrongBuildingZone = structuredClone(generateVillage("zona-adulterada"));
+  wrongBuildingZone.buildings[0].zone = "craft";
+  assert.ok(validateVillage(wrongBuildingZone).errors.some((error) => error.includes("zona")));
+
+  const wrongZoneMap = structuredClone(generateVillage("camada-adulterada"));
+  const building = wrongZoneMap.buildings[0];
+  const center = (building.y + Math.floor((building.height - 1) / 2)) * wrongZoneMap.width + building.x + Math.floor((building.width - 1) / 2);
+  wrongZoneMap.zoneMap[center] = "none";
+  assert.ok(validateVillage(wrongZoneMap).errors.some((error) => error.includes("zona")));
+
+  const duplicateMetadata = structuredClone(generateVillage("metadata-adulterada"));
+  duplicateMetadata.zones[1] = structuredClone(duplicateMetadata.zones[0]);
+  assert.ok(validateVillage(duplicateMetadata).errors.some((error) => error.includes("duplicados")));
+
+  const wrongGrid = structuredClone(generateVillage("grid-adulterada", { layout: "grid" }));
+  wrongGrid.gridSpec.spacing = 12;
+  assert.ok(validateVillage(wrongGrid).errors.some((error) => error.includes("gridSpec")));
 });
 
 test("300 seeds padrão são válidas e rápidas", { timeout: 60_000 }, () => {

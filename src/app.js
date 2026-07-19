@@ -14,6 +14,7 @@ const layoutInput = $('#layout-input');
 const sizeInput = $('#size-input');
 const waterInput = $('#water-input');
 const riverInput = $('#river-input');
+const zonesInput = $('#zones-input');
 const loading = $('#loading');
 const generateButton = $('#generate-button');
 
@@ -57,7 +58,7 @@ function updateStats(elapsed) {
   $('#stat-props').textContent = stats.props ?? village.props.length;
   $('#stat-time').textContent = `${Math.round(elapsed)} ms`;
   $('#biome-chip').textContent = BIOMES[village.settings.biome]?.label ?? village.settings.biome;
-  $('#layout-chip').textContent = village.settings.layout === 'grid' ? 'Quadras' : 'Orgânico';
+  $('#layout-chip').textContent = village.settings.layout === 'grid' ? 'Quadras ortogonais' : 'Orgânico';
   $('#status').textContent = village.validation.valid ? 'Mapa validado' : `${village.validation.errors.length} alertas`;
   $('#status').dataset.valid = String(village.validation.valid);
 }
@@ -118,6 +119,10 @@ $('#copy-seed').addEventListener('click', async (event) => {
 
 for (const input of [waterInput, sizeInput, settlementInput]) input.addEventListener('input', updateControls);
 for (const input of [biomeInput, settlementInput, layoutInput, riverInput]) input.addEventListener('change', generate);
+zonesInput.addEventListener('change', () => {
+  renderer.setShowZones(zonesInput.checked);
+  $('#zone-legend').hidden = !zonesInput.checked;
+});
 canvas.addEventListener('camerachange', (event) => { $('#zoom-label').textContent = `${Math.round(event.detail.zoom * 100)}%`; });
 
 Object.assign(seedInput, { value: randomSeed() });

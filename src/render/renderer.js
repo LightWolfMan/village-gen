@@ -39,6 +39,61 @@ const MATERIALS = Object.freeze({
   stone: { wall: '#aaa79c', lit: '#c5c1b4', shade: '#858177', trim: '#55534d', roof: '#526169', roofLit: '#74858c', roofDark: '#354147' },
   adobe: { wall: '#c28b5c', lit: '#dba778', shade: '#986744', trim: '#70462f', roof: '#9f7045', roofLit: '#c08a57', roofDark: '#6f4b33' },
   slate: { wall: '#a8adb0', lit: '#c7cccd', shade: '#858b8f', trim: '#51585c', roof: '#53636d', roofLit: '#71828c', roofDark: '#35434c' },
+  sandstone: { wall: '#c9a46f', lit: '#dec08b', shade: '#9e7a51', trim: '#72533a', roof: '#9e6843', roofLit: '#c08555', roofDark: '#6d462f' },
+  mudbrick: { wall: '#a96f4d', lit: '#c58b65', shade: '#815139', trim: '#623d2d', roof: '#81583e', roofLit: '#a77754', roofDark: '#55382a' },
+  wattle: { wall: '#b89665', lit: '#d0b27d', shade: '#8d714c', trim: '#5f432b', roof: '#8b6a31', roofLit: '#b19045', roofDark: '#5f4726' },
+  moss: { wall: '#9eaa8f', lit: '#bac4a9', shade: '#77836b', trim: '#465340', roof: '#4e6b43', roofLit: '#6f8d58', roofDark: '#334a30' },
+});
+
+const MATERIAL_ALIASES = Object.freeze({
+  timber: 'wood', 'pine-timber': 'wood', plaster: 'tile', 'lime-plaster': 'tile',
+  fieldstone: 'stone', granite: 'slate', riverstone: 'stone', sandstone: 'sandstone',
+  mudbrick: 'mudbrick', adobe: 'adobe', wattle: 'wattle',
+});
+
+const ROOF_ALIASES = Object.freeze({
+  thatch: 'thatch', 'heavy-thatch': 'thatch', 'reed-thatch': 'thatch', 'reed-mat': 'thatch',
+  'moss-thatch': 'moss', tile: 'tile', 'clay-tile': 'tile', wood: 'wood', 'wood-shingle': 'wood',
+  'steep-wood': 'wood', slate: 'slate', 'steep-slate': 'slate', 'flat-earth': 'adobe',
+});
+
+const ZONE_COLORS = Object.freeze({
+  residential: '#74a7d8',
+  commercial: '#d9af56',
+  craft: '#c77b55',
+  civic: '#aa83cf',
+  agricultural: '#82ad67',
+});
+
+const ARCHITECTURES = Object.freeze({
+  cottage: Object.freeze({ key: 'cottage', wallScale: .90, roofScale: 1.12, extraScale: 1.35, detail: 'chimney' }),
+  townhouse: Object.freeze({ key: 'townhouse', wallScale: 1.22, roofScale: .88, extraScale: .45, detail: 'dormer' }),
+  workshop: Object.freeze({ key: 'workshop', wallScale: .96, roofScale: .82, extraScale: 0, detail: 'canopy' }),
+  civic: Object.freeze({ key: 'civic', wallScale: 1.18, roofScale: 1.08, extraScale: 1.35, detail: 'cupola' }),
+  farmstead: Object.freeze({ key: 'farmstead', wallScale: .86, roofScale: 1.18, extraScale: 0, detail: 'porch' }),
+  manor: Object.freeze({ key: 'manor', wallScale: 1.30, roofScale: 1.02, extraScale: .55, detail: 'twin-dormer' }),
+  tower: Object.freeze({ key: 'tower', wallScale: 1.45, roofScale: .62, extraScale: .45, detail: 'battlement' }),
+  courtyard: Object.freeze({ key: 'courtyard', wallScale: 1.02, roofScale: .28, extraScale: .20, detail: 'parapet' }),
+  chalet: Object.freeze({ key: 'chalet', wallScale: 1.12, roofScale: 1.55, extraScale: .35, detail: 'balcony' }),
+  stilt: Object.freeze({ key: 'stilt', wallScale: 1.08, roofScale: 1.14, extraScale: 0, detail: 'stilts' }),
+  longhouse: Object.freeze({ key: 'longhouse', wallScale: .92, roofScale: 1.26, extraScale: .20, detail: 'braces' }),
+});
+
+const ARCHITECTURE_ALIASES = Object.freeze({
+  'timber-frame': 'cottage', 'stone-cottage': 'cottage', 'wattle-cottage': 'cottage',
+  farmstead: 'farmstead', 'timber-longhouse': 'longhouse',
+  'adobe-courtyard': 'courtyard', 'sandstone-house': 'cottage', 'mudbrick-house': 'cottage',
+  'desert-farmstead': 'farmstead', 'mudbrick-compound': 'courtyard',
+  'alpine-chalet': 'chalet', 'stone-lodge': 'manor', 'timber-cabin': 'cottage',
+  'snow-longhouse': 'longhouse', 'mountain-farmstead': 'farmstead',
+  'stilt-house': 'stilt', 'reed-cottage': 'cottage', 'raised-timber-house': 'stilt',
+  'marsh-farmstead': 'farmstead', 'raised-longhouse': 'stilt',
+  'coaching-inn': 'townhouse', 'gabled-tavern': 'townhouse', 'merchant-house': 'townhouse', 'arcaded-shop': 'townhouse',
+  'forge-workshop': 'workshop', 'stone-smithy': 'workshop', 'guildhall': 'civic', 'manor-hall': 'manor',
+  'parish-chapel': 'civic', 'stone-sanctuary': 'civic', 'covered-market': 'workshop', 'trading-hall': 'townhouse',
+  'water-mill': 'farmstead', 'post-mill': 'farmstead', 'watchtower': 'tower', 'gate-tower': 'tower',
+  'artisan-house': 'workshop', 'workshop-dwelling': 'workshop',
+  'merchant-dwelling': 'townhouse', 'shop-house': 'townhouse',
 });
 
 const ART_MANIFEST = Object.freeze({
@@ -121,12 +176,43 @@ function buildingFootprint(building) {
   };
 }
 
+function inferredArchitecture(type) {
+  if (type === 'inn' || type === 'shop') return 'townhouse';
+  if (type === 'smithy' || type === 'blacksmith' || type === 'market') return 'workshop';
+  if (type === 'hall' || type === 'chapel' || type === 'town-hall' || type === 'townHall') return 'civic';
+  if (type === 'mill') return 'farmstead';
+  if (type === 'tower' || type === 'watchtower') return 'tower';
+  return 'cottage';
+}
+
+/** Perfil visual puro usado tanto pelo renderer quanto pelos testes de bounds. */
+export function getArchitectureProfile(architecture, type = 'house') {
+  const normalized = String(architecture ?? '').replace(/^(temperate|arid|snowy|wetland)-/, '');
+  let family = ARCHITECTURE_ALIASES[normalized] ?? normalized;
+  if (!ARCHITECTURES[family]) {
+    if (/longhouse/.test(normalized)) family = 'longhouse';
+    else if (/stilt|raised/.test(normalized)) family = 'stilt';
+    else if (/courtyard|compound/.test(normalized)) family = 'courtyard';
+    else if (/chalet/.test(normalized)) family = 'chalet';
+    else if (/tower/.test(normalized)) family = 'tower';
+    else if (/manor|lodge/.test(normalized)) family = 'manor';
+    else if (/farm|croft|mill/.test(normalized)) family = 'farmstead';
+    else if (/workshop|smithy|forge|market/.test(normalized)) family = 'workshop';
+    else if (/guildhall|chapel|sanctuary/.test(normalized)) family = 'civic';
+    else if (/townhouse|rowhouse|inn|tavern|merchant|shop|trading/.test(normalized)) family = 'townhouse';
+    else if (/cottage|cabin|house|timber-frame/.test(normalized)) family = 'cottage';
+  }
+  return ARCHITECTURES[family] ?? ARCHITECTURES[inferredArchitecture(type)];
+}
+
 function buildingPixels(building, options) {
   const stories = clamp(Math.round(finite(building.storeys ?? building.stories, building.type === 'tower' || building.type === 'watchtower' ? 3 : 1)), 1, 4);
-  const wall = options.tileHeight * (1.15 + stories * 0.72);
-  const roof = options.tileHeight * (building.type === 'watchtower' ? 0.5 : 0.9);
+  const architecture = getArchitectureProfile(building.architecture, building.type);
+  const wall = options.tileHeight * (1.15 + stories * 0.72) * architecture.wallScale;
+  const roof = options.tileHeight * (building.type === 'watchtower' ? 0.5 : 0.9) * architecture.roofScale;
   const special = building.type === 'chapel' || building.type === 'mill' ? options.tileHeight * 2.6 : 0;
-  return { wall, roof, special, total: wall + roof + special };
+  const extra = options.tileHeight * architecture.extraScale;
+  return { wall, roof, special, extra, total: wall + roof + special + extra, architecture };
 }
 
 function propMetrics(prop, options) {
@@ -303,6 +389,29 @@ function drawTerrainTile(ctx, map, x, y, state) {
   }
 }
 
+function zoneAt(map, x, y) {
+  if (x < 0 || y < 0 || x >= map.width || y >= map.height) return 'none';
+  const index = y * map.width + x;
+  if (map.terrain?.[index] === 'water') return 'none';
+  return map.zoneMap?.[index] ?? 'none';
+}
+
+function drawZoneTile(ctx, map, x, y, state) {
+  const zone = zoneAt(map, x, y);
+  const color = ZONE_COLORS[zone];
+  if (!color) return;
+  const shape = diamondAt(x, y, levelAt(map, x, y), state, 1);
+  ctx.save();
+  ctx.globalAlpha = .16;
+  polygon(ctx, color, [shape.north, shape.east, shape.south, shape.west]);
+  ctx.globalAlpha = .42;
+  if (zoneAt(map, x - 1, y) !== zone) line(ctx, color, 1, [shape.west, shape.north]);
+  if (zoneAt(map, x, y - 1) !== zone) line(ctx, color, 1, [shape.north, shape.east]);
+  if (zoneAt(map, x + 1, y) !== zone) line(ctx, color, 1, [shape.east, shape.south]);
+  if (zoneAt(map, x, y + 1) !== zone) line(ctx, color, 1, [shape.south, shape.west]);
+  ctx.restore();
+}
+
 function drawRoad(ctx, road, map, state) {
   const level = levelAt(map, road.x, road.y);
   const isBridge = Boolean(road.bridge);
@@ -411,6 +520,113 @@ function drawRoofCourses(ctx, ridgeA, ridgeB, eaveA, eaveB, color, width = 1) {
   }
 }
 
+function drawArchitectureDetails(ctx, building, shape, state, mat, profile) {
+  const scale = state.metrics.tileWidth / 32;
+  const ridgeCenter = mixPoint(shape.ridgeA, shape.ridgeB, .5);
+  const lightEaveCenter = mixPoint(shape.roof.lightEave[0], shape.roof.lightEave[1], .5);
+  const darkEaveCenter = mixPoint(shape.roof.darkEave[0], shape.roof.darkEave[1], .5);
+  if (profile.detail === 'chimney') {
+    const anchor = mixPoint(shape.ridgeA, shape.ridgeB, building.variant % 2 ? .72 : .28);
+    polygon(ctx, tint(mat.trim, 18), [
+      { x: anchor.x - 4 * scale, y: anchor.y + 2 * scale }, { x: anchor.x + 3 * scale, y: anchor.y + 4 * scale },
+      { x: anchor.x + 3 * scale, y: anchor.y - 12 * scale }, { x: anchor.x - 4 * scale, y: anchor.y - 14 * scale },
+    ], mat.trim);
+    line(ctx, 'rgba(240,232,210,.32)', 2 * scale, [
+      { x: anchor.x, y: anchor.y - 15 * scale }, { x: anchor.x + 3 * scale, y: anchor.y - 20 * scale },
+    ]);
+  } else if (profile.detail === 'dormer' || profile.detail === 'twin-dormer') {
+    const count = profile.detail === 'twin-dormer' ? 2 : 1;
+    for (let index = 0; index < count; index += 1) {
+      const u = count === 1 ? .5 : .32 + index * .36;
+      const ridge = mixPoint(shape.ridgeA, shape.ridgeB, u);
+      const eave = mixPoint(shape.roof.lightEave[0], shape.roof.lightEave[1], u);
+      const center = mixPoint(ridge, eave, .58);
+      polygon(ctx, mat.wall, [
+        { x: center.x - 5 * scale, y: center.y - 5 * scale }, { x: center.x + 4 * scale, y: center.y - 2 * scale },
+        { x: center.x + 4 * scale, y: center.y + 6 * scale }, { x: center.x - 5 * scale, y: center.y + 3 * scale },
+      ], mat.trim);
+      polygon(ctx, mat.roof, [
+        { x: center.x - 7 * scale, y: center.y - 5 * scale }, { x: center.x, y: center.y - 11 * scale },
+        { x: center.x + 7 * scale, y: center.y - 3 * scale },
+      ], mat.roofDark);
+      ctx.fillStyle = '#54747b';
+      ctx.fillRect(Math.round(center.x - 2 * scale), Math.round(center.y - 2 * scale), Math.max(1, Math.round(3 * scale)), Math.max(1, Math.round(4 * scale)));
+    }
+  } else if (profile.detail === 'canopy') {
+    const wallA = mixPoint(shape.sTop, shape.wTop, .12);
+    const wallB = mixPoint(shape.sTop, shape.wTop, .88);
+    const downA = shifted(wallA, 10 * scale);
+    const downB = shifted(wallB, 10 * scale);
+    polygon(ctx, mat.roofDark, [wallA, wallB, downB, downA], mat.trim);
+    line(ctx, mat.trim, 2 * scale, [downA, shifted(downA, 13 * scale)]);
+    line(ctx, mat.trim, 2 * scale, [downB, shifted(downB, 13 * scale)]);
+  } else if (profile.detail === 'cupola') {
+    const baseY = ridgeCenter.y - 2 * scale;
+    polygon(ctx, mat.lit, [
+      { x: ridgeCenter.x - 6 * scale, y: baseY }, { x: ridgeCenter.x + 6 * scale, y: baseY + 3 * scale },
+      { x: ridgeCenter.x + 6 * scale, y: baseY - 10 * scale }, { x: ridgeCenter.x - 6 * scale, y: baseY - 13 * scale },
+    ], mat.trim);
+    polygon(ctx, mat.roofLit, [
+      { x: ridgeCenter.x - 9 * scale, y: baseY - 12 * scale }, { x: ridgeCenter.x, y: baseY - 20 * scale },
+      { x: ridgeCenter.x + 9 * scale, y: baseY - 9 * scale }, { x: ridgeCenter.x, y: baseY - 5 * scale },
+    ], mat.roofDark);
+  } else if (profile.detail === 'porch') {
+    const wallA = mixPoint(shape.sTop, shape.wTop, .08);
+    const wallB = mixPoint(shape.sTop, shape.wTop, .92);
+    const frontA = mixPoint(wallA, darkEaveCenter, .34);
+    const frontB = mixPoint(wallB, darkEaveCenter, .34);
+    polygon(ctx, mat.roof, [wallA, wallB, shifted(frontB, 9 * scale), shifted(frontA, 9 * scale)], mat.roofDark);
+    line(ctx, mat.trim, 2 * scale, [shifted(frontA, 9 * scale), shifted(frontA, 22 * scale)]);
+    line(ctx, mat.trim, 2 * scale, [shifted(frontB, 9 * scale), shifted(frontB, 22 * scale)]);
+  } else if (profile.detail === 'battlement') {
+    const top = ridgeCenter.y - 4 * scale;
+    for (let index = -2; index <= 2; index += 1) {
+      ctx.fillStyle = mat.trim;
+      ctx.fillRect(Math.round(ridgeCenter.x + index * 6 * scale - 2 * scale), Math.round(top - Math.abs(index) * scale), Math.max(2, Math.round(4 * scale)), Math.max(2, Math.round(6 * scale)));
+    }
+  } else if (profile.detail === 'parapet') {
+    line(ctx, mat.trim, 3 * scale, [shape.roof.lightEave[0], shape.roof.lightEave[1]]);
+    line(ctx, tint(mat.wall, 18), 3 * scale, [shape.roof.darkEave[0], shape.roof.darkEave[1]]);
+    for (const t of [.12, .38, .62, .88]) {
+      const point = mixPoint(shape.roof.darkEave[0], shape.roof.darkEave[1], t);
+      ctx.fillStyle = mat.trim;
+      ctx.fillRect(Math.round(point.x - 2 * scale), Math.round(point.y - 5 * scale), Math.max(2, Math.round(4 * scale)), Math.max(2, Math.round(6 * scale)));
+    }
+  } else if (profile.detail === 'balcony') {
+    const left = mixPoint(shape.sTop, shape.wTop, .16);
+    const right = mixPoint(shape.sTop, shape.wTop, .84);
+    const deckLeft = shifted(left, 18 * scale);
+    const deckRight = shifted(right, 18 * scale);
+    polygon(ctx, tint(mat.trim, 16), [deckLeft, deckRight, shifted(deckRight, 4 * scale), shifted(deckLeft, 4 * scale)], mat.trim);
+    line(ctx, mat.trim, 2 * scale, [shifted(left, 10 * scale), shifted(right, 10 * scale)]);
+    for (const t of [.05, .35, .65, .95]) {
+      const top = mixPoint(shifted(left, 10 * scale), shifted(right, 10 * scale), t);
+      const bottom = mixPoint(deckLeft, deckRight, t);
+      line(ctx, mat.trim, 1, [top, bottom]);
+    }
+  } else if (profile.detail === 'stilts') {
+    for (const point of [shape.e, shape.s, shape.w]) {
+      line(ctx, '#4d3827', 3 * scale, [point, shifted(point, 14 * scale)]);
+      line(ctx, 'rgba(38,48,37,.28)', 2 * scale, [shifted(point, 14 * scale), { x: point.x + 7 * scale, y: point.y + 18 * scale }]);
+    }
+  } else if (profile.detail === 'braces') {
+    const a = mixPoint(shape.sTop, shape.wTop, .10);
+    const b = mixPoint(shape.sTop, shape.wTop, .90);
+    const c = mixPoint(shape.s, shape.w, .10);
+    const d = mixPoint(shape.s, shape.w, .90);
+    line(ctx, 'rgba(67,43,27,.70)', 2 * scale, [a, d]);
+    line(ctx, 'rgba(67,43,27,.70)', 2 * scale, [b, c]);
+  }
+
+  if (state.showZones && building.zone && ZONE_COLORS[building.zone]) {
+    ctx.save();
+    ctx.globalAlpha = .72;
+    ctx.fillStyle = ZONE_COLORS[building.zone];
+    ctx.fillRect(Math.round(lightEaveCenter.x - 2 * scale), Math.round(lightEaveCenter.y + 2 * scale), Math.max(2, Math.round(4 * scale)), Math.max(2, Math.round(3 * scale)));
+    ctx.restore();
+  }
+}
+
 function drawBuildingShadow(ctx, building, state) {
   const c = buildingCorners(building, state);
   const vertical = buildingPixels(building, state.metrics).total;
@@ -447,15 +663,17 @@ function drawWindows(ctx, building, wall, side, material, count) {
 function drawBuilding(ctx, building, state) {
   const c = buildingCorners(building, state);
   const pixels = buildingPixels(building, state.metrics);
-  const wallKey = { timber: 'wood', plaster: 'tile' }[building.material] ?? building.material;
+  const wallKey = MATERIAL_ALIASES[building.material] ?? building.material;
   const wallMaterial = MATERIALS[wallKey] ?? MATERIALS.wood;
-  const roofMaterial = MATERIALS[building.roof] ?? wallMaterial;
+  const roofKey = ROOF_ALIASES[building.roof] ?? building.roof;
+  const roofMaterial = MATERIALS[roofKey] ?? wallMaterial;
   const mat = {
     ...wallMaterial,
     roof: roofMaterial.roof,
     roofLit: roofMaterial.roofLit,
     roofDark: roofMaterial.roofDark,
   };
+  const profile = pixels.architecture;
   const wallLift = -pixels.wall;
   const wall = { ...c, nTop: shifted(c.n, wallLift), eTop: shifted(c.e, wallLift), sTop: shifted(c.s, wallLift), wTop: shifted(c.w, wallLift) };
 
@@ -501,6 +719,8 @@ function drawBuilding(ctx, building, state) {
     { x: doorTop.x - 4, y: doorTop.y - 2 }, { x: doorTop.x + 4, y: doorTop.y + 1 },
     { x: groundMid.x + 4, y: groundMid.y }, { x: groundMid.x - 4, y: groundMid.y - 3 },
   ], mat.trim);
+
+  drawArchitectureDetails(ctx, building, { ...wall, roof, ridgeA: roof.ridgeA, ridgeB: roof.ridgeB }, state, mat, profile);
 
   drawBuildingFeature(ctx, building, { ...wall, ridgeA: roof.ridgeA, ridgeB: roof.ridgeB, pixels }, state);
 }
@@ -641,7 +861,7 @@ export function renderVillageToCanvas(map, options = {}) {
   ctx.fillStyle = biome === 'snowy' ? '#d5e0df' : biome === 'arid' ? '#b9955f' : '#294737';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const state = { map, metrics };
+  const state = { map, metrics, showZones: options.showZones === true };
   const roads = new Map((map.roads ?? []).map((road) => [`${road.x},${road.y}`, road]));
   const buildingsByDepth = new Map();
   const propsByDepth = new Map();
@@ -663,6 +883,7 @@ export function renderVillageToCanvas(map, options = {}) {
     for (let x = xStart; x <= xEnd; x += 1) {
       const y = depth - x;
       drawTerrainTile(ctx, map, x, y, state);
+      if (state.showZones) drawZoneTile(ctx, map, x, y, state);
       const road = roads.get(`${x},${y}`);
       if (road) drawRoad(ctx, road, map, state);
       else if (isPlazaTile(map.plaza, x, y)) drawPlazaTile(ctx, x, y, levelAt(map, x, y), state);
@@ -718,6 +939,7 @@ export class VillageRenderer {
     this.ctx.imageSmoothingEnabled = false;
     this.map = null;
     this.world = null;
+    this.showZones = false;
     this.camera = { x: 0, y: 0, zoom: 1 };
     this.drag = null;
     this.frame = 0;
@@ -730,8 +952,19 @@ export class VillageRenderer {
 
   setMap(map) {
     this.map = map;
-    this.world = renderVillageToCanvas(map);
+    this.world = renderVillageToCanvas(map, { showZones: this.showZones });
     this.center();
+  }
+
+  setShowZones(value) {
+    const next = value === true;
+    if (next === this.showZones) return;
+    this.showZones = next;
+    if (this.map) this.world = renderVillageToCanvas(this.map, { showZones: this.showZones });
+    this.draw();
+    if (typeof CustomEvent !== 'undefined') {
+      this.canvas.dispatchEvent(new CustomEvent('zoneschange', { detail: { showZones: this.showZones } }));
+    }
   }
 
   resize() {
@@ -816,6 +1049,7 @@ export class VillageRenderer {
       else if (event.key === 'ArrowDown') this.camera.y -= amount;
       else if (event.key === '+' || event.key === '=') return this.setZoom(this.camera.zoom * 1.2);
       else if (event.key === '-') return this.setZoom(this.camera.zoom / 1.2);
+      else if (event.key.toLowerCase() === 'z') return this.setShowZones(!this.showZones);
       else return;
       event.preventDefault(); this.clampCamera(); this.notifyCamera(); this.draw();
     };
@@ -850,7 +1084,7 @@ export class VillageRenderer {
 
   exportCanvas(options = {}) {
     if (!this.map) throw new Error('Nenhum mapa foi definido para exportacao.');
-    return renderVillageToCanvas(this.map, options);
+    return renderVillageToCanvas(this.map, { showZones: this.showZones, ...options });
   }
 
   destroy() {

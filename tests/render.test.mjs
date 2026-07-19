@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeRenderBounds, computeRoofGeometry, projectPoint } from '../src/render/renderer.js';
+import { computeRenderBounds, computeRoofGeometry, getArchitectureProfile, projectPoint } from '../src/render/renderer.js';
 
 function sampleMap() {
   return {
@@ -108,4 +108,51 @@ test('geometria do telhado troca as faces sem criar triangulo sobreposto', () =>
   assert.deepEqual(vertical.lightFace, [base.n, vertical.ridgeA, vertical.ridgeB, base.w]);
   assert.deepEqual(vertical.darkFace, [vertical.ridgeA, base.e, base.s, vertical.ridgeB]);
   assert.equal(vertical.gables.length, 2);
+});
+
+test('perfis arquitetonicos alteram a silhueta sem quebrar os bounds', () => {
+  const cottage = getArchitectureProfile('cottage');
+  const townhouse = getArchitectureProfile('townhouse');
+  const workshop = getArchitectureProfile('workshop');
+  const civic = getArchitectureProfile('civic');
+  const farmstead = getArchitectureProfile('farmstead');
+  assert.ok(Object.isFrozen(cottage));
+  assert.ok(townhouse.wallScale > cottage.wallScale);
+  assert.ok(farmstead.roofScale > workshop.roofScale);
+  assert.notEqual(civic.detail, cottage.detail);
+  assert.equal(getArchitectureProfile(undefined, 'smithy'), workshop);
+  assert.equal(getArchitectureProfile('perfil-inexistente', 'hall'), civic);
+  assert.equal(getArchitectureProfile('timber-frame').key, 'cottage');
+  assert.equal(getArchitectureProfile('adobe-courtyard').key, 'courtyard');
+  assert.equal(getArchitectureProfile('alpine-chalet').key, 'chalet');
+  assert.equal(getArchitectureProfile('stilt-house').key, 'stilt');
+  assert.equal(getArchitectureProfile('raised-longhouse').key, 'stilt');
+  assert.equal(getArchitectureProfile('forge-workshop').key, 'workshop');
+  assert.equal(getArchitectureProfile('guildhall').key, 'civic');
+  assert.equal(getArchitectureProfile('gate-tower').key, 'tower');
+  assert.equal(getArchitectureProfile('temperate-timber-frame').key, 'cottage');
+  assert.equal(getArchitectureProfile('arid-adobe-courtyard').key, 'courtyard');
+  assert.equal(getArchitectureProfile('snowy-alpine-chalet').key, 'chalet');
+  assert.equal(getArchitectureProfile('wetland-raised-longhouse').key, 'stilt');
+  assert.equal(getArchitectureProfile('temperate-urban-townhouse').key, 'townhouse');
+  assert.equal(getArchitectureProfile('temperate-artisan-rowhouse').key, 'townhouse');
+  assert.equal(getArchitectureProfile('temperate-croft-farm').key, 'farmstead');
+  assert.equal(getArchitectureProfile('artisan-house').key, 'workshop');
+  assert.equal(getArchitectureProfile('workshop-dwelling').key, 'workshop');
+  assert.equal(getArchitectureProfile('merchant-dwelling').key, 'townhouse');
+  assert.equal(getArchitectureProfile('shop-house').key, 'townhouse');
+  for (const architecture of ['timber-frame', 'adobe-courtyard', 'alpine-chalet', 'stilt-house', 'forge-workshop', 'guildhall']) {
+    const profile = getArchitectureProfile(architecture);
+    assert.ok(profile.wallScale > 0);
+    assert.ok(profile.roofScale > 0);
+    assert.ok(profile.extraScale >= 0);
+  }
+
+  const low = sampleMap();
+  low.buildings[0].architecture = 'farmstead';
+  low.props = [];
+  const tall = sampleMap();
+  tall.buildings[0].architecture = 'townhouse';
+  tall.props = [];
+  assert.ok(computeRenderBounds(tall).height > computeRenderBounds(low).height);
 });

@@ -24,14 +24,16 @@
           <div class="form-grid">
             <div><label for="biome-input">Bioma</label><select id="biome-input"><option value="temperate">Campo temperado</option><option value="arid">Sertão árido</option><option value="snowy">Planalto nevado</option><option value="wetland">Pântano úmido</option></select></div>
             <div><label for="settlement-input">Assentamento</label><select id="settlement-input"><option value="hamlet">Povoado</option><option value="village">Vila</option><option value="town">Cidade</option></select></div>
-            <div><label for="layout-input">Traçado</label><select id="layout-input"><option value="organic">Orgânico</option><option value="grid">Quadras</option></select></div>
+            <div><label for="layout-input">Traçado das ruas</label><select id="layout-input"><option value="organic">Orgânico / sinuoso</option><option value="grid">Quadras ortogonais</option></select></div>
             <div><label for="size-input">Escala</label><select id="size-input"><option value="72">Compacta</option><option value="96">Padrão</option><option value="128">Expansiva</option></select></div>
           </div>
 
           <div class="range-title"><label for="water-input">Presença de água</label><output id="water-value">Equilibrado</output></div>
           <input id="water-input" type="range" min="0.05" max="0.75" step="0.05" value="0.35">
           <div class="size-readout"><span>Mapa efetivo</span><output id="size-value">96 × 96</output></div>
+          <p class="field-help">No modo Quadras, as ruas seguem os eixos cardeais do mapa. Elas parecem diagonais apenas na projeção isométrica.</p>
           <label class="toggle"><input id="river-input" type="checkbox"><span></span>Rio atravessando a região</label>
+          <label class="toggle"><input id="zones-input" type="checkbox"><span></span>Exibir zonas funcionais</label>
           <button id="generate-button" class="button generate" type="submit">✦ Gerar novo vilarejo</button>
         </form>
 
@@ -46,6 +48,7 @@
         <canvas id="village-canvas" tabindex="0" aria-label="Mapa isométrico. Arraste para navegar e use a roda para ampliar."></canvas>
         <div class="chips"><span id="biome-chip">Campo temperado</span><span id="layout-chip">Orgânico</span><span class="iso-chip">◆ Isométrico 2.5D</span></div>
         <div class="zoom"><button id="zoom-out" type="button">−</button><span id="zoom-label">100%</span><button id="zoom-in" type="button">+</button></div>
+        <div id="zone-legend" class="zone-legend" hidden><span data-zone="residential">Residencial</span><span data-zone="commercial">Comércio</span><span data-zone="craft">Oficinas</span><span data-zone="civic">Cívica</span><span data-zone="agricultural">Rural</span></div>
         <div id="loading" class="loading" role="status" aria-live="polite" hidden><i></i><strong>Construindo o relevo…</strong></div>
       </section>
     </section>
