@@ -177,6 +177,36 @@ test("fundações, margens e props permanecem espacialmente válidos", () => {
   assert.equal(validateVillage(map).valid, true);
 });
 
+test("portas são entradas terrestres, exclusivas e coerentes com a fachada", () => {
+  const map = generateVillage("entradas", { settlement: "town", rivers: true });
+  const roadByKey = new Map(map.roads.map((road) => [`${road.x},${road.y}`, road]));
+  const occupied = new Set();
+  for (const building of map.buildings) {
+    for (let y = building.y; y < building.y + building.height; y += 1) for (let x = building.x; x < building.x + building.width; x += 1) occupied.add(`${x},${y}`);
+  }
+  const doors = new Set();
+  for (const building of map.buildings) {
+    const { door } = building;
+    assert.ok(door.x >= 0 && door.y >= 0 && door.x < map.width && door.y < map.height);
+    assert.notEqual(terrainAt(map, door.x, door.y), "water");
+    assert.equal(roadByKey.get(`${door.x},${door.y}`)?.bridge, false);
+    const expected = {
+      north: door.y === building.y - 1 && door.x >= building.x && door.x < building.x + building.width,
+      south: door.y === building.y + building.height && door.x >= building.x && door.x < building.x + building.width,
+      west: door.x === building.x - 1 && door.y >= building.y && door.y < building.y + building.height,
+      east: door.x === building.x + building.width && door.y >= building.y && door.y < building.y + building.height,
+    };
+    assert.equal(expected[building.orientation], true);
+    assert.equal(Object.values(expected).filter(Boolean).length, 1);
+    assert.equal(building.entranceVisible, ["south", "east"].includes(building.orientation));
+    assert.equal(occupied.has(`${door.x},${door.y}`), false);
+    assert.equal(doors.has(`${door.x},${door.y}`), false);
+    doors.add(`${door.x},${door.y}`);
+  }
+  assert.ok(map.buildings.filter(({ entranceVisible }) => entranceVisible).length > map.buildings.length * 0.7);
+  for (const prop of map.props) assert.equal(doors.has(`${prop.x},${prop.y}`), false);
+});
+
 test("validação acusa adulterações estruturais", () => {
   const map = structuredClone(generateVillage("adulterado"));
   map.buildings[1].x = map.buildings[0].x;
@@ -206,6 +236,26 @@ test("validação acusa adulterações estruturais", () => {
   const wrongGrid = structuredClone(generateVillage("grid-adulterada", { layout: "grid" }));
   wrongGrid.gridSpec.spacing = 12;
   assert.ok(validateVillage(wrongGrid).errors.some((error) => error.includes("gridSpec")));
+
+  const waterDoor = structuredClone(generateVillage("porta-agua"));
+  const waterBuilding = waterDoor.buildings[0];
+  waterDoor.terrain[waterBuilding.door.y * waterDoor.width + waterBuilding.door.x] = "water";
+  assert.ok(validateVillage(waterDoor).errors.some((error) => error.includes("água")));
+
+  const propOnDoor = structuredClone(generateVillage("prop-na-porta"));
+  const propDoor = propOnDoor.buildings[0].door;
+  propOnDoor.props.push({ id: "prop-invasor", type: "rock", x: propDoor.x, y: propDoor.y, level: propOnDoor.heightLevel[propDoor.y * propOnDoor.width + propDoor.x], variant: 0 });
+  assert.ok(validateVillage(propOnDoor).errors.some((error) => error.includes("ocupa uma porta")));
+
+  const footprintOnDoor = structuredClone(generateVillage("predio-na-porta"));
+  const blockedDoor = footprintOnDoor.buildings[0].door;
+  footprintOnDoor.buildings[1].x = blockedDoor.x;
+  footprintOnDoor.buildings[1].y = blockedDoor.y;
+  assert.ok(validateVillage(footprintOnDoor).errors.some((error) => error.includes("dentro de um footprint")));
+
+  const wrongOrientation = structuredClone(generateVillage("orientacao-porta"));
+  wrongOrientation.buildings[0].orientation = wrongOrientation.buildings[0].orientation === "north" ? "south" : "north";
+  assert.ok(validateVillage(wrongOrientation).errors.some((error) => error.includes("orientação")));
 });
 
 test("300 seeds padrão são válidas e rápidas", { timeout: 60_000 }, () => {

@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeRenderBounds, computeRoofGeometry, getArchitectureProfile, projectPoint } from '../src/render/renderer.js';
+import {
+  computeDoorPlacement,
+  computeEavedRoofBase,
+  computeRenderBounds,
+  computeRoofGeometry,
+  getArchitectureProfile,
+  projectPoint,
+} from '../src/render/renderer.js';
 
 function sampleMap() {
   return {
@@ -108,6 +115,36 @@ test('geometria do telhado troca as faces sem criar triangulo sobreposto', () =>
   assert.deepEqual(vertical.lightFace, [base.n, vertical.ridgeA, vertical.ridgeB, base.w]);
   assert.deepEqual(vertical.darkFace, [vertical.ridgeA, base.e, base.s, vertical.ridgeB]);
   assert.equal(vertical.gables.length, 2);
+});
+
+test('beiral expande o telhado sem alterar a base original', () => {
+  const base = {
+    n: { x: 0, y: -8 }, e: { x: 16, y: 0 },
+    s: { x: 0, y: 8 }, w: { x: -16, y: 0 },
+  };
+  const before = structuredClone(base);
+  assert.deepEqual(computeEavedRoofBase(base, 4), {
+    n: { x: 0, y: -10 }, e: { x: 20, y: 0 },
+    s: { x: 0, y: 10 }, w: { x: -20, y: 0 },
+  });
+  assert.deepEqual(base, before);
+  assert.throws(() => computeEavedRoofBase(null), /Base de beiral invalida/);
+});
+
+test('portas usam somente a face isometrica correspondente a orientation', () => {
+  const south = computeDoorPlacement({ x: 10, y: 20, width: 3, height: 2, orientation: 'south', door: { x: 11, y: 22 } });
+  const east = computeDoorPlacement({ x: 10, y: 20, width: 2, height: 3, orientation: 'east', door: { x: 12, y: 21 } });
+  assert.deepEqual(south, { orientation: 'south', face: 'south', visible: true, t: .5 });
+  assert.deepEqual(east, { orientation: 'east', face: 'east', visible: true, t: .5 });
+  assert.deepEqual(
+    computeDoorPlacement({ x: 10, y: 20, width: 2, height: 2, orientation: 'north', door: { x: 10, y: 19 } }),
+    { orientation: 'north', face: null, visible: false, t: null },
+  );
+  assert.deepEqual(
+    computeDoorPlacement({ x: 10, y: 20, width: 2, height: 2, orientation: 'west', door: { x: 9, y: 20 } }),
+    { orientation: 'west', face: null, visible: false, t: null },
+  );
+  assert.ok(Object.isFrozen(south));
 });
 
 test('perfis arquitetonicos alteram a silhueta sem quebrar os bounds', () => {

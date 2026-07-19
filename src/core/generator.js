@@ -495,6 +495,7 @@ function buildingStyle(map, type, zone, random) {
 
 function placeBuildings(map, random, roadMap) {
   const reserved = new Set();
+  const usedDoors = new Set();
   // A building may touch its access road, but its footprint never replaces a
   // road tile (especially important where a bridge crosses reclaimed land).
   for (const key of roadMap.keys()) reserved.add(key);
@@ -518,15 +519,20 @@ function placeBuildings(map, random, roadMap) {
     // Enumerate every frontage exactly once. Random side sampling could miss a
     // valid final lot even after thousands of attempts on a crowded village.
     const spread = isHouse ? map.width * 0.18 : 3;
-    const frontages = roads.flatMap((road) => [0, 1, 2, 3].map((side) => ({
+    const frontageCandidates = roads.flatMap((road) => [0, 1, 2, 3].map((side) => ({
       road,
       side,
       score: Math.hypot(road.x - villageCenter.x, road.y - villageCenter.y) + random() * spread,
-    }))).sort((a, b) => a.score - b.score);
+    })));
+    const frontages = [
+      ...frontageCandidates.filter(({ side }) => side === 0 || side === 2).sort((a, b) => a.score - b.score),
+      ...frontageCandidates.filter(({ side }) => side === 1 || side === 3).sort((a, b) => a.score - b.score),
+    ];
     for (const [width, height] of dimensions) {
       for (const { road, side } of frontages) {
         if (placed) break;
         const candidate = candidateAtRoad(road, side, width, height);
+        if (usedDoors.has(keyOf(candidate.door.x, candidate.door.y))) continue;
         if (!rectangleClear(map, reserved, candidate.x, candidate.y, width, height)) continue;
         const zone = zoneForFootprint(map, candidate, width, height, allowedZones);
         if (!zone) continue;
@@ -550,11 +556,14 @@ function placeBuildings(map, random, roadMap) {
       const building = {
         id: `building-${buildings.length + 1}`,
         type, x: candidate.x, y: candidate.y, width, height,
-        door: candidate.door, orientation: candidate.orientation, baseLevel, zone,
+        door: candidate.door, orientation: candidate.orientation,
+        entranceVisible: candidate.orientation === "south" || candidate.orientation === "east",
+        baseLevel, zone,
         ...style,
         variant: random.int(0, 5),
       };
       buildings.push(building);
+      usedDoors.add(keyOf(building.door.x, building.door.y));
       reserveBuilding(reserved, building);
       placed = true;
       }

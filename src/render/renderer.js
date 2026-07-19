@@ -468,6 +468,34 @@ function shifted(point, dy) { return { x: point.x, y: point.y + dy }; }
 
 function mixPoint(a, b, t = .5) { return { x: a.x * (1 - t) + b.x * t, y: a.y * (1 - t) + b.y * t }; }
 
+export function computeEavedRoofBase(base, amount = 2) {
+  if (!base || !base.n || !base.e || !base.s || !base.w) throw new TypeError('Base de beiral invalida.');
+  const eave = Math.max(0, finite(amount, 2));
+  return {
+    n: { x: base.n.x, y: base.n.y - eave * .5 },
+    e: { x: base.e.x + eave, y: base.e.y },
+    s: { x: base.s.x, y: base.s.y + eave * .5 },
+    w: { x: base.w.x - eave, y: base.w.y },
+  };
+}
+
+/** Retorna a face visivel e a posicao da porta ao longo dela. */
+export function computeDoorPlacement(building) {
+  const orientation = building?.orientation ?? building?.facing ?? 'south';
+  const footprint = buildingFootprint(building ?? {});
+  if (orientation === 'south') {
+    const doorX = finite(building?.door?.x, finite(building?.x, 0) + (footprint.width - 1) / 2);
+    const relative = (doorX - finite(building.x, 0) + .5) / footprint.width;
+    return Object.freeze({ orientation, face: 'south', visible: true, t: clamp(1 - relative, .08, .92) });
+  }
+  if (orientation === 'east') {
+    const doorY = finite(building?.door?.y, finite(building?.y, 0) + (footprint.height - 1) / 2);
+    const relative = (doorY - finite(building.y, 0) + .5) / footprint.height;
+    return Object.freeze({ orientation, face: 'east', visible: true, t: clamp(relative, .08, .92) });
+  }
+  return Object.freeze({ orientation, face: null, visible: false, t: null });
+}
+
 /**
  * Constroi um telhado de duas aguas sobre o paralelogramo isometrico da casa.
  * As faces precisam mudar quando o eixo longo muda: reutilizar os mesmos quatro
@@ -633,18 +661,27 @@ function drawBuildingShadow(ctx, building, state) {
   const dx = vertical * .42;
   const dy = vertical * .20;
   ctx.save();
-  ctx.globalAlpha = .2;
-  polygon(ctx, '#172019', [c.w, c.s, { x: c.s.x + dx, y: c.s.y + dy }, { x: c.w.x + dx, y: c.w.y + dy }]);
+  for (const layer of [1.18, 1, .76]) {
+    ctx.globalAlpha = layer > 1 ? .045 : layer === 1 ? .075 : .11;
+    polygon(ctx, '#101813', [
+      c.w, c.s,
+      { x: c.s.x + dx * layer, y: c.s.y + dy * layer },
+      { x: c.w.x + dx * layer, y: c.w.y + dy * layer },
+    ]);
+  }
+  ctx.globalAlpha = .24;
+  line(ctx, '#101511', 3, [c.w, c.s, c.e]);
   ctx.restore();
 }
 
-function drawWindows(ctx, building, wall, side, material, count) {
+function drawWindows(ctx, building, wall, side, material, count, doorPlacement) {
   const topA = side === 'east' ? wall.eTop : wall.sTop;
   const topB = side === 'east' ? wall.sTop : wall.wTop;
   const bottomA = side === 'east' ? wall.e : wall.s;
   const bottomB = side === 'east' ? wall.s : wall.w;
   for (let index = 1; index <= count; index += 1) {
     const t = index / (count + 1);
+    if (doorPlacement.face === side && Math.abs(t - doorPlacement.t) < .19) continue;
     const top = mixPoint(topA, topB, t);
     const bottom = mixPoint(bottomA, bottomB, t);
     const center = mixPoint(top, bottom, .56);
@@ -658,6 +695,88 @@ function drawWindows(ctx, building, wall, side, material, count) {
       { x: center.x + dx - Math.sign(dx), y: center.y + 3 }, { x: center.x - 3, y: center.y + 1 },
     ]);
   }
+}
+
+function drawDoorThreshold(ctx, building, state) {
+  if (!building.door) return;
+  const x = Math.round(finite(building.door.x, -1));
+  const y = Math.round(finite(building.door.y, -1));
+  if (x < 0 || y < 0 || x >= state.map.width || y >= state.map.height) return;
+  const shape = diamondAt(x, y, levelAt(state.map, x, y), state, state.metrics.tileWidth * .33, -1);
+  polygon(ctx, '#b5a47d', [shape.north, shape.east, shape.south, shape.west], '#615845');
+  line(ctx, 'rgba(244,231,193,.45)', 1, [shape.west, shape.north, shape.east]);
+}
+
+function drawFoundation(ctx, wall, state) {
+  const rise = Math.max(4, state.metrics.tileHeight * .34);
+  const eTop = shifted(wall.e, -rise);
+  const sTop = shifted(wall.s, -rise);
+  const wTop = shifted(wall.w, -rise);
+  polygon(ctx, '#716e64', [eTop, sTop, wall.s, wall.e], '#45463f');
+  polygon(ctx, '#89857a', [sTop, wTop, wall.w, wall.s], '#515048');
+  line(ctx, 'rgba(225,218,198,.22)', 1, [wTop, sTop, eTop]);
+  const joints = Math.max(2, wall.footprint.width + wall.footprint.height);
+  for (let index = 1; index < joints; index += 1) {
+    const t = index / joints;
+    const point = mixPoint(wTop, sTop, t);
+    line(ctx, 'rgba(49,48,44,.30)', 1, [point, shifted(point, rise * .72)]);
+  }
+}
+
+function drawWallTexture(ctx, building, wall, materialKey, state) {
+  const stoneLike = ['stone', 'slate', 'sandstone', 'mudbrick', 'adobe'].includes(materialKey);
+  const timberLike = ['wood', 'wattle'].includes(materialKey);
+  const rows = stoneLike ? 4 : 3;
+  for (let row = 1; row < rows; row += 1) {
+    const t = row / rows;
+    const eastA = mixPoint(wall.eTop, wall.e, t);
+    const eastB = mixPoint(wall.sTop, wall.s, t);
+    const southA = mixPoint(wall.sTop, wall.s, t);
+    const southB = mixPoint(wall.wTop, wall.w, t);
+    const color = stoneLike ? 'rgba(50,46,40,.20)' : 'rgba(255,248,226,.09)';
+    line(ctx, color, 1, [eastA, eastB]);
+    line(ctx, color, 1, [southA, southB]);
+  }
+  if (timberLike) {
+    const beams = Math.max(2, Math.floor((wall.footprint.width + wall.footprint.height) / 2));
+    for (let index = 1; index <= beams; index += 1) {
+      const t = index / (beams + 1);
+      line(ctx, 'rgba(67,43,27,.52)', 1, [mixPoint(wall.sTop, wall.wTop, t), mixPoint(wall.s, wall.w, t)]);
+      if (index <= wall.footprint.height) line(ctx, 'rgba(55,38,28,.42)', 1, [mixPoint(wall.eTop, wall.sTop, t), mixPoint(wall.e, wall.s, t)]);
+    }
+  } else if (hash2(building.x, building.y, building.variant ?? 0) % 2 === 0) {
+    const center = mixPoint(mixPoint(wall.sTop, wall.wTop, .5), mixPoint(wall.s, wall.w, .5), .52);
+    ctx.fillStyle = 'rgba(77,69,56,.18)';
+    ctx.fillRect(Math.round(center.x - 1), Math.round(center.y - 1), 3, 2);
+  }
+}
+
+function drawVisibleDoor(ctx, building, wall, material, placement, state) {
+  if (!placement.visible) return;
+  const side = placement.face;
+  const topA = side === 'east' ? wall.eTop : wall.sTop;
+  const topB = side === 'east' ? wall.sTop : wall.wTop;
+  const groundA = side === 'east' ? wall.e : wall.s;
+  const groundB = side === 'east' ? wall.s : wall.w;
+  const wallTop = mixPoint(topA, topB, placement.t);
+  const ground = mixPoint(groundA, groundB, placement.t);
+  const doorTop = mixPoint(wallTop, ground, .43);
+  const vx = topB.x - topA.x;
+  const vy = topB.y - topA.y;
+  const length = Math.max(1, Math.hypot(vx, vy));
+  const width = Math.max(4, state.metrics.tileWidth * .17);
+  const ux = vx / length * width;
+  const uy = vy / length * width;
+  const frame = [
+    { x: doorTop.x - ux, y: doorTop.y - uy }, { x: doorTop.x + ux, y: doorTop.y + uy },
+    { x: ground.x + ux, y: ground.y + uy }, { x: ground.x - ux, y: ground.y - uy },
+  ];
+  polygon(ctx, material.trim, frame);
+  const inset = frame.map((point, index) => mixPoint(point, index < 2 ? ground : doorTop, .08));
+  polygon(ctx, '#3b291e', inset, '#271c16');
+  const knob = mixPoint(doorTop, ground, .58);
+  ctx.fillStyle = '#d9b75f';
+  ctx.fillRect(Math.round(knob.x + ux * .45), Math.round(knob.y + uy * .45), 1, 1);
 }
 
 function drawBuilding(ctx, building, state) {
@@ -674,51 +793,37 @@ function drawBuilding(ctx, building, state) {
     roofDark: roofMaterial.roofDark,
   };
   const profile = pixels.architecture;
+  const doorPlacement = computeDoorPlacement(building);
   const wallLift = -pixels.wall;
   const wall = { ...c, nTop: shifted(c.n, wallLift), eTop: shifted(c.e, wallLift), sTop: shifted(c.s, wallLift), wTop: shifted(c.w, wallLift) };
 
+  drawDoorThreshold(ctx, building, state);
   polygon(ctx, '#5a5448', [c.e, c.s, c.w, c.n], '#39352f');
   polygon(ctx, mat.shade, [wall.eTop, wall.sTop, wall.s, wall.e], mat.trim);
   polygon(ctx, mat.wall, [wall.sTop, wall.wTop, wall.w, wall.s], mat.trim);
   line(ctx, 'rgba(255,248,220,.20)', 1, [wall.wTop, wall.sTop]);
-
-  const beams = Math.max(1, Math.floor((c.footprint.width + c.footprint.height) / 3));
-  for (let index = 1; index <= beams; index += 1) {
-    const t = index / (beams + 1);
-    const a = mixPoint(wall.sTop, wall.wTop, t);
-    const b = mixPoint(wall.s, wall.w, t);
-    line(ctx, 'rgba(70,47,29,.45)', 1, [a, b]);
-  }
-  drawWindows(ctx, building, wall, 'east', mat, Math.max(1, c.footprint.height - 1));
-  drawWindows(ctx, building, wall, 'south', mat, Math.max(1, c.footprint.width - 1));
+  drawWallTexture(ctx, building, wall, wallKey, state);
+  drawFoundation(ctx, wall, state);
+  drawWindows(ctx, building, wall, 'east', mat, Math.max(1, c.footprint.height - 1), doorPlacement);
+  drawWindows(ctx, building, wall, 'south', mat, Math.max(1, c.footprint.width - 1), doorPlacement);
 
   const roofBase = { n: wall.nTop, e: wall.eTop, s: wall.sTop, w: wall.wTop };
+  const eavedRoofBase = computeEavedRoofBase(roofBase, Math.max(2, state.metrics.tileWidth / 15));
   const roofLift = -pixels.roof;
   const longX = c.footprint.width >= c.footprint.height;
-  const roof = computeRoofGeometry(roofBase, roofLift, longX);
-  for (let index = 0; index < roof.gables.length; index += 1) {
-    polygon(ctx, index === 0 ? mat.wall : mat.shade, roof.gables[index], mat.trim);
+  const wallRoof = computeRoofGeometry(roofBase, roofLift, longX);
+  const roof = computeRoofGeometry(eavedRoofBase, roofLift, longX);
+  for (let index = 0; index < wallRoof.gables.length; index += 1) {
+    polygon(ctx, index === 0 ? mat.wall : mat.shade, wallRoof.gables[index], mat.trim);
   }
   polygon(ctx, mat.roofLit, roof.lightFace, tint(mat.roofDark, -4));
   polygon(ctx, mat.roofDark, roof.darkFace, tint(mat.roofDark, -10));
   drawRoofCourses(ctx, roof.ridgeA, roof.ridgeB, roof.lightEave[0], roof.lightEave[1], 'rgba(74,45,28,.24)');
   drawRoofCourses(ctx, roof.ridgeA, roof.ridgeB, roof.darkEave[0], roof.darkEave[1], 'rgba(18,18,16,.30)');
   line(ctx, tint(mat.roofLit, 24), 2, [roof.ridgeA, roof.ridgeB]);
-  line(ctx, 'rgba(20,18,16,.35)', 2, [roofBase.w, roofBase.s, roofBase.e]);
-
-  const facing = building.orientation ?? building.facing ?? 'south';
-  const doorSide = facing === 'east' || facing === 'west' ? 'east' : 'south';
-  const a = doorSide === 'east' ? wall.eTop : wall.sTop;
-  const b = doorSide === 'east' ? wall.sTop : wall.wTop;
-  const ga = doorSide === 'east' ? wall.e : wall.s;
-  const gb = doorSide === 'east' ? wall.s : wall.w;
-  const topMid = mixPoint(a, b, .5);
-  const groundMid = mixPoint(ga, gb, .5);
-  const doorTop = mixPoint(topMid, groundMid, .42);
-  polygon(ctx, '#3b291e', [
-    { x: doorTop.x - 4, y: doorTop.y - 2 }, { x: doorTop.x + 4, y: doorTop.y + 1 },
-    { x: groundMid.x + 4, y: groundMid.y }, { x: groundMid.x - 4, y: groundMid.y - 3 },
-  ], mat.trim);
+  line(ctx, 'rgba(16,17,15,.48)', 4, [eavedRoofBase.w, eavedRoofBase.s, eavedRoofBase.e]);
+  line(ctx, 'rgba(238,221,178,.18)', 1, [eavedRoofBase.w, eavedRoofBase.s, eavedRoofBase.e]);
+  drawVisibleDoor(ctx, building, wall, mat, doorPlacement, state);
 
   drawArchitectureDetails(ctx, building, { ...wall, roof, ridgeA: roof.ridgeA, ridgeB: roof.ridgeB }, state, mat, profile);
 

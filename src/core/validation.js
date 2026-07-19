@@ -26,15 +26,37 @@ function connectedRoads(map, roadSet, errors) {
   if (reached.size !== roadSet.size) errors.push(`rede viária desconectada: ${roadSet.size - reached.size} tiles`);
 }
 
-function validateBuildings(map, roadSet, errors) {
+function validateBuildings(map, roadSet, roadByKey, errors) {
   const occupied = new Map();
   const expanded = new Map();
+  const doorSet = new Set();
   for (const building of map.buildings) {
     if (building.x < 0 || building.y < 0 || building.x + building.width > map.width || building.y + building.height > map.height) {
       errors.push(`edifício ${building.id} fora do mapa`);
       continue;
     }
-    if (!roadSet.has(keyOf(building.door.x, building.door.y))) errors.push(`porta de ${building.id} não acessa uma rua`);
+    const door = building.door;
+    const doorValid = door && Number.isInteger(door.x) && Number.isInteger(door.y)
+      && door.x >= 0 && door.y >= 0 && door.x < map.width && door.y < map.height;
+    if (!doorValid) errors.push(`porta de ${building.id} fora do mapa`);
+    else {
+      const doorKey = keyOf(door.x, door.y);
+      const road = roadByKey.get(doorKey);
+      if (!road) errors.push(`porta de ${building.id} não acessa uma rua`);
+      else if (road.bridge) errors.push(`porta de ${building.id} usa uma ponte`);
+      if (map.terrain[door.y * map.width + door.x] === "water") errors.push(`porta de ${building.id} está na água`);
+      const sideMatches = {
+        north: door.y === building.y - 1 && door.x >= building.x && door.x < building.x + building.width,
+        south: door.y === building.y + building.height && door.x >= building.x && door.x < building.x + building.width,
+        west: door.x === building.x - 1 && door.y >= building.y && door.y < building.y + building.height,
+        east: door.x === building.x + building.width && door.y >= building.y && door.y < building.y + building.height,
+      };
+      if (!sideMatches[building.orientation] || Object.values(sideMatches).filter(Boolean).length !== 1) errors.push(`porta de ${building.id} não corresponde à orientação`);
+      const visible = building.orientation === "south" || building.orientation === "east";
+      if (building.entranceVisible !== visible) errors.push(`visibilidade da entrada incorreta em ${building.id}`);
+      if (doorSet.has(doorKey)) errors.push(`porta compartilhada em ${doorKey}`);
+      doorSet.add(doorKey);
+    }
     if (!TYPE_ZONES[building.type]?.includes(building.zone)) errors.push(`zona inadequada em ${building.id}: ${building.zone}`);
     if (typeof building.architecture !== "string" || !building.architecture.length) errors.push(`arquitetura ausente em ${building.id}`);
     const centerX = building.x + Math.floor((building.width - 1) / 2);
@@ -62,7 +84,10 @@ function validateBuildings(map, roadSet, errors) {
       }
     }
   }
-  return expanded;
+  for (const building of map.buildings) {
+    if (building.door && occupied.has(keyOf(building.door.x, building.door.y))) errors.push(`porta de ${building.id} está dentro de um footprint`);
+  }
+  return { expanded, doorSet };
 }
 
 function validateZones(map, errors) {
@@ -134,7 +159,7 @@ function validateZones(map, errors) {
   }
 }
 
-function validateProps(map, roadSet, buildingMargin, errors) {
+function validateProps(map, roadSet, buildingMargin, doorSet, errors) {
   const trees = [];
   const treeTypes = new Set(["oak", "pine", "willow"]);
   const occupied = new Set();
@@ -142,6 +167,7 @@ function validateProps(map, roadSet, buildingMargin, errors) {
     const key = keyOf(prop.x, prop.y);
     if (prop.x < 0 || prop.y < 0 || prop.x >= map.width || prop.y >= map.height) errors.push(`prop ${prop.id} fora do mapa`);
     if (roadSet.has(key) || buildingMargin.has(key)) errors.push(`prop ${prop.id} ocupa rua ou margem de edifício`);
+    if (doorSet.has(key)) errors.push(`prop ${prop.id} ocupa uma porta`);
     if (map.terrain[prop.y * map.width + prop.x] === "water") errors.push(`prop ${prop.id} sobre água`);
     if (map.heightLevel[prop.y * map.width + prop.x] !== prop.level) errors.push(`nível incorreto em ${prop.id}`);
     if (occupied.has(key)) errors.push(`props sobrepostos em ${key}`);
@@ -195,6 +221,7 @@ export function validateVillage(map) {
   if (map.settings.layout === "organic" && map.roadTopology !== "organic-cardinal") errors.push("traçado orgânico sem topologia declarada");
   validateZones(map, errors);
   const roadSet = new Set(map.roads.map(({ x, y }) => keyOf(x, y)));
+  const roadByKey = new Map(map.roads.map((road) => [keyOf(road.x, road.y), road]));
   if (roadSet.size !== map.roads.length) errors.push("tiles de estrada duplicados");
   for (const road of map.roads) {
     const water = map.terrain[road.y * map.width + road.x] === "water";
@@ -204,8 +231,8 @@ export function validateVillage(map) {
   }
   connectedRoads(map, roadSet, errors);
   validateRoadTopology(map, roadSet, errors);
-  const buildingMargin = validateBuildings(map, roadSet, errors);
-  validateProps(map, roadSet, buildingMargin, errors);
+  const buildingValidation = validateBuildings(map, roadSet, roadByKey, errors);
+  validateProps(map, roadSet, buildingValidation.expanded, buildingValidation.doorSet, errors);
   const range = HOUSE_RANGES[map.settings.settlement];
   const houses = map.buildings.filter((building) => building.type === "house").length;
   if (!range || houses < range[0] || houses > range[1]) errors.push(`quantidade de casas fora da faixa: ${houses}`);
