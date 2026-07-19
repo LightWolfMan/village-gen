@@ -1,515 +1,681 @@
-import { TILE, TERRAIN_FILLS, SPRITES, fillKeyFor, pickIndex } from './atlas.js';
+/**
+ * Renderer isometrico da Village v2.
+ *
+ * Este modulo nao conhece o gerador: recebe apenas o VillageMap serializavel e
+ * pre-renderiza o mundo inteiro em um Canvas 2D. A camera passa a mover uma
+ * unica imagem estatica, mantendo pan e zoom baratos mesmo em mapas grandes.
+ */
 
-const ART = { village: null, floor: null };
+export const ISO_DEFAULTS = Object.freeze({
+  tileWidth: 32,
+  tileHeight: 16,
+  heightStep: 6,
+  padding: 64,
+});
 
-// Paleta de fallback (usada quando as folhas de arte não carregam).
-const PALETTE = {
-  grass: ['#668f4e', '#6f9955', '#759f59', '#62894b'],
-  meadow: ['#9db24a', '#a7bd52', '#93a942'],
-  forest: ['#496d42', '#43663d', '#527648'],
-  water: ['#6fb0c4', '#79b7ca', '#68a9be'],
-  sand: ['#e6c489', '#ecca90', '#dfbc82'],
-  dirt: ['#8d745e', '#82694f', '#977c63'],
-  snow: ['#eef1f3', '#e6eaee', '#f6f7f9'],
-  marsh: ['#5f7a4a', '#556f42', '#657f4f'],
-  road: '#8d745e', roadEdge: '#5f4c38', plaza: '#b49b70',
-  shadow: 'rgba(24, 32, 20, .27)'
-};
+const TERRAIN = Object.freeze({
+  temperate: {
+    grass: ['#71944d', '#7b9d54'], forest: ['#4e7242', '#587b47'], dirt: ['#8d7454', '#987f5c'],
+    sand: ['#d9bd7b', '#e2c887'], water: ['#4b9bb1', '#55a8bd'], marsh: ['#597447', '#647e4d'], snow: ['#e7ecea', '#f2f4ef'],
+  },
+  arid: {
+    grass: ['#9ca74d', '#aab256'], forest: ['#707c3f', '#7c8746'], dirt: ['#9b7048', '#aa7c50'],
+    sand: ['#d4ad63', '#e2bd71'], water: ['#398da5', '#49a0b5'], marsh: ['#647446', '#72814d'], snow: ['#ece9dd', '#f4f0e3'],
+  },
+  snowy: {
+    grass: ['#cad7ce', '#d7e0d9'], forest: ['#607a69', '#6d8874'], dirt: ['#7f7469', '#8b8075'],
+    sand: ['#d3ccb8', '#e0d9c6'], water: ['#5899ad', '#69aabd'], marsh: ['#778a77', '#849682'], snow: ['#e7eef1', '#f4f7f7'],
+  },
+  wetland: {
+    grass: ['#667f48', '#718b50'], forest: ['#405f3d', '#4b6b44'], dirt: ['#725f48', '#806b50'],
+    sand: ['#b7a572', '#c2b07b'], water: ['#467f87', '#528e94'], marsh: ['#4f6c48', '#5b7750'], snow: ['#dfe8e3', '#eaf0eb'],
+  },
+});
 
-// Materiais de edifício: [telhado escuro, telhado médio, telhado claro], parede, viga.
-const MATERIALS = {
-  thatch: { roof: ['#7c5a24', '#a9822f', '#d8b154'], wall: '#d3ba82', trim: '#8a6a3c' },
-  tile: { roof: ['#7a2f28', '#b6503f', '#e0906a'], wall: '#d7c096', trim: '#7c5033' },
-  wood: { roof: ['#4a3320', '#6d4e2c', '#94733f'], wall: '#b3854f', trim: '#5c4126' },
-  stone: { roof: ['#3c474d', '#5c6970', '#8fa4ac'], wall: '#b2ab9c', trim: '#6c6456' }
-};
+const MATERIALS = Object.freeze({
+  thatch: { wall: '#c9ad77', lit: '#ddc58d', shade: '#a98c5e', trim: '#67472b', roof: '#b18738', roofLit: '#d0aa4d', roofDark: '#765527' },
+  tile: { wall: '#d1b987', lit: '#e5d09e', shade: '#aa9166', trim: '#65452e', roof: '#a74737', roofLit: '#cf6851', roofDark: '#702e2a' },
+  wood: { wall: '#a87748', lit: '#be8d59', shade: '#805936', trim: '#4c3322', roof: '#614329', roofLit: '#85613b', roofDark: '#39291d' },
+  stone: { wall: '#aaa79c', lit: '#c5c1b4', shade: '#858177', trim: '#55534d', roof: '#526169', roofLit: '#74858c', roofDark: '#354147' },
+  adobe: { wall: '#c28b5c', lit: '#dba778', shade: '#986744', trim: '#70462f', roof: '#9f7045', roofLit: '#c08a57', roofDark: '#6f4b33' },
+  slate: { wall: '#a8adb0', lit: '#c7cccd', shade: '#858b8f', trim: '#51585c', roof: '#53636d', roofLit: '#71828c', roofDark: '#35434c' },
+});
 
-// Luz padronizada vindo do noroeste: sombras projetadas para o sudeste (baixo-direita).
-const LIGHT = { sx: 0.52, sy: 0.34 }; // deslocamento da sombra por unidade de altura
-const DECO_HEIGHT = { tree: 42, 'dead-tree': 30, bush: 13, rock: 9, cactus: 18, haystack: 14, cart: 9, snowman: 16, well: 12, reeds: 9, 'dead-bush': 7 };
-// Tom ambiente por bioma (soft-light) para dar clima ao conjunto.
-const AMBIENT = {
-  temperate: 'rgba(255, 226, 158, 0.10)',
-  arid: 'rgba(255, 210, 130, 0.14)',
-  snowy: 'rgba(178, 210, 255, 0.12)',
-  wetland: 'rgba(150, 205, 150, 0.10)'
-};
+const ART_MANIFEST = Object.freeze({
+  tree: '/assets/props/temperate-tree.png',
+  'temperate-tree': '/assets/props/temperate-tree.png',
+  'snowy-pine': '/assets/props/snowy-pine.png',
+  cactus: '/assets/props/desert-cactus.png',
+  'desert-cactus': '/assets/props/desert-cactus.png',
+  willow: '/assets/props/swamp-willow.png',
+  'swamp-willow': '/assets/props/swamp-willow.png',
+  rock: '/assets/props/rock.png',
+  well: '/assets/props/well.png',
+  cart: '/assets/props/cart.png',
+  haystack: '/assets/props/haystack.png',
+});
+
+const ART = new Map();
+
+function optionsWithDefaults(options = {}) {
+  return {
+    tileWidth: positive(options.tileWidth, ISO_DEFAULTS.tileWidth),
+    tileHeight: positive(options.tileHeight, ISO_DEFAULTS.tileHeight),
+    heightStep: positive(options.heightStep, ISO_DEFAULTS.heightStep),
+    padding: Math.max(0, finite(options.padding, ISO_DEFAULTS.padding)),
+  };
+}
+
+function finite(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function positive(value, fallback) {
+  const number = finite(value, fallback);
+  return number > 0 ? number : fallback;
+}
+
+function clamp(value, minimum, maximum) {
+  return Math.max(minimum, Math.min(maximum, value));
+}
 
 function hash2(x, y, salt = 0) {
-  let h = Math.imul(x + 0x9e3779b9, 0x85ebca6b) ^ Math.imul(y + salt, 0xc2b2ae35);
-  h ^= h >>> 16;
-  return h >>> 0;
+  let value = Math.imul((x | 0) ^ 0x9e3779b9, 0x85ebca6b);
+  value ^= Math.imul((y | 0) + salt, 0xc2b2ae35);
+  value ^= value >>> 16;
+  return value >>> 0;
 }
 
-// Paralelogramo de sombra projetada a partir da base de um objeto (para o SE).
-function shadowPoly(sctx, fx, baseY, fw, height) {
-  const dx = height * LIGHT.sx;
-  const dy = height * LIGHT.sy;
-  sctx.beginPath();
-  sctx.moveTo(fx, baseY);
-  sctx.lineTo(fx + fw, baseY);
-  sctx.lineTo(fx + fw + dx, baseY + dy);
-  sctx.lineTo(fx + dx, baseY + dy);
-  sctx.closePath();
-  sctx.fill();
+function tint(hex, amount) {
+  const source = String(hex).replace('#', '');
+  if (source.length !== 6) return hex;
+  const channel = (offset) => clamp(parseInt(source.slice(offset, offset + 2), 16) + amount, 0, 255).toString(16).padStart(2, '0');
+  return `#${channel(0)}${channel(2)}${channel(4)}`;
 }
 
-function colorAt(colors, x, y, salt = 0) {
-  return colors[hash2(x, y, salt) % colors.length];
+/** Projeta uma coordenada do mapa sem aplicar a origem calculada do canvas. */
+export function projectPoint(x, y, level = 0, options = {}) {
+  const { tileWidth, tileHeight, heightStep } = optionsWithDefaults(options);
+  return {
+    x: (finite(x, 0) - finite(y, 0)) * (tileWidth / 2),
+    y: (finite(x, 0) + finite(y, 0)) * (tileHeight / 2) - finite(level, 0) * heightStep,
+  };
 }
 
-function rect(ctx, color, x, y, w, h) {
-  ctx.fillStyle = color;
-  ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+function levelAt(map, x, y) {
+  if (x < 0 || y < 0 || x >= map.width || y >= map.height) return 0;
+  const value = map.heightLevel?.[y * map.width + x];
+  if (Number.isFinite(value)) return Math.max(0, value);
+  return map.terrain?.[y * map.width + x] === 'water' ? 0 : 1;
 }
 
-function drawFloorSprite(ctx, key, x, y, px, py) {
-  const variants = TERRAIN_FILLS[key];
-  const [sx, sy] = variants[pickIndex(x, y, 5, variants.length)];
-  ctx.drawImage(ART.floor, sx, sy, TILE, TILE, px, py, TILE, TILE);
+function biomeOf(map) {
+  return map.settings?.biome ?? map.biome ?? 'temperate';
 }
 
-function drawGroundTile(ctx, map, x, y) {
-  const type = map.terrain[y * map.width + x];
-  const px = x * TILE;
-  const py = y * TILE;
+function buildingFootprint(building) {
+  return {
+    width: Math.max(1, Math.round(finite(building.width ?? building.footprint?.width, 2))),
+    height: Math.max(1, Math.round(finite(building.height ?? building.footprint?.height, 2))),
+  };
+}
 
-  if (ART.floor) {
-    drawFloorSprite(ctx, fillKeyFor(type, map.biome), x, y, px, py);
-  } else {
-    const colors = PALETTE[type] ?? PALETTE.grass;
-    rect(ctx, colorAt(colors, x, y), px, py, TILE, TILE);
+function buildingPixels(building, options) {
+  const stories = clamp(Math.round(finite(building.storeys ?? building.stories, building.type === 'tower' || building.type === 'watchtower' ? 3 : 1)), 1, 4);
+  const wall = options.tileHeight * (1.15 + stories * 0.72);
+  const roof = options.tileHeight * (building.type === 'watchtower' ? 0.5 : 0.9);
+  const special = building.type === 'chapel' || building.type === 'mill' ? options.tileHeight * 2.6 : 0;
+  return { wall, roof, special, total: wall + roof + special };
+}
+
+function propMetrics(prop, options) {
+  const type = prop.type ?? 'grass-tuft';
+  const scale = options.tileWidth / 32;
+  const values = {
+    tree: [54, 88], 'temperate-tree': [54, 88], 'snowy-pine': [54, 90], pine: [54, 90],
+    willow: [72, 90], 'swamp-willow': [72, 90], cactus: [36, 58], 'desert-cactus': [36, 58],
+    rock: [34, 25], well: [38, 43], cart: [50, 34], haystack: [38, 37],
+    'dead-tree': [43, 65], bush: [32, 27], fence: [34, 21], garden: [36, 20],
+  };
+  const [width, height] = values[type] ?? [28, 28];
+  return { width: width * scale, height: height * scale };
+}
+
+/**
+ * Calcula bounds conservadores de tudo que pode ser desenhado. A funcao e pura:
+ * carregar arte depois pode apenas reduzir a folga, nunca aumentar o canvas.
+ */
+export function computeRenderBounds(map, options = {}) {
+  if (!map || !Number.isInteger(map.width) || !Number.isInteger(map.height) || map.width < 1 || map.height < 1) {
+    throw new TypeError('VillageMap invalido: width e height positivos sao obrigatorios.');
   }
-
-  const h = hash2(x, y, 91);
-  // Sobreposições que dão profundidade além do preenchimento base.
-  if (type === 'forest') {
-    rect(ctx, 'rgba(31,71,44,.34)', px, py, TILE, TILE);
-    if (h % 6 === 0) rect(ctx, 'rgba(20,52,32,.4)', px + 4 + h % 6, py + 5, 3, 2);
-  } else if (type === 'marsh') {
-    rect(ctx, 'rgba(74,110,72,.5)', px, py, TILE, TILE);
-    if (h % 5 === 0) rect(ctx, 'rgba(70,120,128,.55)', px + 3 + h % 7, py + 6 + (h >>> 3) % 5, 4, 3);
-  } else if (type === 'water') {
-    if (h % 7 < 2) rect(ctx, 'rgba(230,247,250,.35)', px + 2 + (h % 3) * 4, py + 7 + (h >>> 4) % 4, 5, 1);
-    rect(ctx, 'rgba(35,86,104,.14)', px, py, TILE, TILE);
-  } else if (map.biome === 'snowy' && (type === 'grass' || type === 'forest')) {
-    rect(ctx, 'rgba(236,242,246,.4)', px, py, TILE, TILE);
-  }
-
-  // Hillshade: relevo a partir da elevação (encostas ao NO iluminadas, ao SE sombreadas).
-  if (type !== 'water' && map.elevation) {
-    const w = map.width, ht = map.height;
-    const idx = y * w + x;
-    const e = map.elevation;
-    const xl = x > 0 ? e[idx - 1] : e[idx];
-    const xr = x < w - 1 ? e[idx + 1] : e[idx];
-    const yt = y > 0 ? e[idx - w] : e[idx];
-    const yb = y < ht - 1 ? e[idx + w] : e[idx];
-    const light = -((xr - xl) + (yb - yt)); // >0 encosta voltada à luz (NO)
-    if (light > 0.015) rect(ctx, `rgba(255,250,236,${Math.min(0.24, light * 1.7)})`, px, py, TILE, TILE);
-    else if (light < -0.015) rect(ctx, `rgba(24,30,26,${Math.min(0.26, -light * 1.9)})`, px, py, TILE, TILE);
-  }
-}
-
-function drawRoadTile(ctx, x, y, roadSet) {
-  const px = x * TILE;
-  const py = y * TILE;
-  const n = roadSet.has(`${x},${y - 1}`);
-  const s = roadSet.has(`${x},${y + 1}`);
-  const w = roadSet.has(`${x - 1},${y}`);
-  const e = roadSet.has(`${x + 1},${y}`);
-  if (ART.floor) {
-    drawFloorSprite(ctx, 'dirt', x + 97, y + 31, px, py); // offset p/ variante distinta
-  } else {
-    rect(ctx, colorAt(PALETTE.dirt, x, y), px, py, TILE, TILE);
-  }
-  // Bordas escurecidas onde a via toca terreno (dá forma ao caminho).
-  const edge = 'rgba(46,34,22,.28)';
-  if (!n) rect(ctx, edge, px, py, TILE, 2);
-  if (!s) rect(ctx, edge, px, py + TILE - 2, TILE, 2);
-  if (!w) rect(ctx, edge, px, py, 2, TILE);
-  if (!e) rect(ctx, edge, px + TILE - 2, py, 2, TILE);
-  const h = hash2(x, y, 17);
-  if (h % 6 === 0) rect(ctx, 'rgba(232,206,158,.3)', px + 4 + h % 7, py + 4 + (h >>> 4) % 7, 2, 1);
-}
-
-function drawPlaza(ctx, plaza) {
-  for (let y = plaza.y; y < plaza.y + plaza.height; y += 1) {
-    for (let x = plaza.x; x < plaza.x + plaza.width; x += 1) {
-      const px = x * TILE;
-      const py = y * TILE;
-      rect(ctx, colorAt(['#c3ac82', '#b9a276', '#ccb78c'], x, y), px, py, TILE, TILE);
-      rect(ctx, 'rgba(91,75,54,.22)', px, py, TILE, 1);
-      rect(ctx, 'rgba(240,224,183,.2)', px, py + 1, TILE, 1);
-      if (hash2(x, y, 5) % 4 === 0) rect(ctx, 'rgba(120,100,70,.25)', px + 4, py + 9, 3, 3);
-    }
-  }
-}
-
-// ---- Edifícios ---------------------------------------------------------------
-
-function drawSpriteBuilding(ctx, sprite, x, y, w, h) {
-  rect(ctx, 'rgba(15,20,14,.24)', x + 2, y + h - 1, w + 1, 3); // oclusão de contato
-  const scale = Math.max(w / sprite.w, (h + 14) / sprite.h);
-  const dw = Math.round(sprite.w * scale);
-  const dh = Math.round(sprite.h * scale);
-  const dx = x + Math.round((w - dw) / 2);
-  const dy = y + h - dh + 4;
-  ctx.drawImage(ART.village, sprite.x, sprite.y, sprite.w, sprite.h, dx, dy, dw, dh);
-}
-
-function drawRoof(ctx, x, y, w, roofHeight, mat, hipped) {
-  const baseY = y + roofHeight;
-  const midX = x + Math.floor(w / 2);
-  rect(ctx, mat.roof[0], x - 2, y + 5, w + 4, roofHeight - 2);
-  // Corpo do telhado.
-  ctx.fillStyle = mat.roof[1];
-  ctx.beginPath();
-  const apexL = hipped ? x + Math.floor(w * 0.28) : midX;
-  const apexR = hipped ? x + Math.ceil(w * 0.72) : midX;
-  const apexY = hipped ? y - 1 : y - 2;
-  ctx.moveTo(x - 3, baseY);
-  ctx.lineTo(apexL, apexY);
-  ctx.lineTo(apexR, apexY);
-  ctx.lineTo(x + w + 3, baseY);
-  ctx.fill();
-  // Face voltada ao noroeste iluminada.
-  ctx.fillStyle = 'rgba(255,251,236,.17)';
-  ctx.beginPath();
-  ctx.moveTo(x - 3, baseY);
-  ctx.lineTo(apexL, apexY);
-  ctx.lineTo(midX, apexY);
-  ctx.lineTo(midX, baseY);
-  ctx.closePath();
-  ctx.fill();
-  // Face voltada ao sudeste sombreada.
-  ctx.fillStyle = 'rgba(18,22,28,.2)';
-  ctx.beginPath();
-  ctx.moveTo(midX, baseY);
-  ctx.lineTo(midX, apexY);
-  ctx.lineTo(apexR, apexY);
-  ctx.lineTo(x + w + 3, baseY);
-  ctx.closePath();
-  ctx.fill();
-  // Cumeeira e sombra do beiral.
-  rect(ctx, mat.roof[2], midX - 1, y + 1, 2, roofHeight - 5);
-  rect(ctx, 'rgba(0,0,0,.18)', x - 3, baseY - 2, w + 6, 2);
-}
-
-function drawDoorAndWindows(ctx, building, x, y, w, h, roofHeight, mat) {
-  const windowY = y + roofHeight + 5;
-  const windows = Math.max(1, Math.floor((w - 12) / 16));
-  for (let i = 0; i < windows; i += 1) {
-    const wx = x + 6 + i * Math.floor((w - 12) / windows);
-    rect(ctx, mat.trim, wx - 1, windowY - 1, 7, 7);
-    rect(ctx, '#31505a', wx, windowY, 5, 5);
-    rect(ctx, '#e7c46e', wx + 1, windowY + 1, 3, 3);
-    rect(ctx, 'rgba(255,255,255,.3)', wx + 1, windowY + 1, 1, 1);
-  }
-  let doorX = x + Math.floor(w / 2) - 3;
-  let doorY = y + h - 13;
-  let doorW = 7;
-  let doorH = 13;
-  if (building.facing === 'north') doorY = y + roofHeight;
-  if (building.facing === 'east' || building.facing === 'west') {
-    doorX = building.facing === 'east' ? x : x + w - 8;
-    doorY = y + h - 10;
-    doorW = 8;
-    doorH = 8;
-  }
-  rect(ctx, mat.trim, doorX - 1, doorY - 1, doorW + 2, doorH + 1);
-  rect(ctx, '#3e2e24', doorX, doorY, doorW, doorH);
-  rect(ctx, '#d8b35f', doorX + doorW - 2, doorY + Math.floor(doorH / 2), 1, 1);
-}
-
-function drawBuildingFeatures(ctx, building, x, y, w, h, roofHeight) {
-  const cx = x + Math.floor(w / 2);
-  const v = building.variant ?? 0;
-  switch (building.type) {
-    case 'chapel': {
-      rect(ctx, '#f4ecd6', cx - 1, y - 9, 2, 9);
-      rect(ctx, '#f4ecd6', cx - 4, y - 6, 8, 2);
-      break;
-    }
-    case 'mill': {
-      const mx = x + w - 3;
-      rect(ctx, '#6a4d2c', mx - 1, y + roofHeight - 4, 3, 3);
-      rect(ctx, '#caa25a', mx - 10, y + roofHeight - 12, 11, 2);
-      rect(ctx, '#caa25a', mx - 1, y + roofHeight - 12, 11, 2);
-      rect(ctx, '#caa25a', mx, y + roofHeight - 22, 2, 11);
-      rect(ctx, '#caa25a', mx, y + roofHeight - 1, 2, 11);
-      break;
-    }
-    case 'watchtower': {
-      rect(ctx, MATERIALS.stone.wall, x + 2, y - 9, w - 4, 12);
-      for (let bx = x + 2; bx < x + w - 3; bx += 5) rect(ctx, MATERIALS.stone.roof[0], bx, y - 12, 3, 3);
-      rect(ctx, '#b6503f', cx, y - 18, 1, 7);
-      rect(ctx, '#d86a52', cx + 1, y - 18, 6, 4);
-      break;
-    }
-    case 'blacksmith': {
-      rect(ctx, '#5a5148', x + w - 10, y + 1, 5, roofHeight + 2);
-      rect(ctx, 'rgba(240,150,60,.85)', x + w - 9, y, 3, 2);
-      rect(ctx, 'rgba(120,120,130,.5)', x + w - 8, y - 5, 2, 4);
-      break;
-    }
-    case 'inn':
-    case 'town-hall': {
-      const bannerX = building.facing === 'west' ? x - 3 : x + w - 4;
-      rect(ctx, '#7a2f2a', bannerX, y + roofHeight + 1, 5, 12);
-      rect(ctx, '#d8b35f', bannerX + 1, y + roofHeight + 3, 3, 1);
-      rect(ctx, '#d8b35f', bannerX + 1, y + roofHeight + 7, 3, 1);
-      break;
-    }
-    case 'shop':
-    case 'market': {
-      for (let sx = x + 2; sx < x + w - 2; sx += 6) {
-        rect(ctx, (sx - x) % 12 < 6 ? '#c94f42' : '#efe6d0', sx, y + roofHeight, 6, 4);
-      }
-      break;
-    }
-    default:
-      if (v % 5 === 0) { // chaminé ocasional em casas
-        rect(ctx, MATERIALS.stone.roof[0], x + w - 9, y + 1, 4, roofHeight);
-        rect(ctx, 'rgba(200,200,210,.4)', x + w - 8, y - 4, 2, 4);
-      }
-  }
-}
-
-function drawBuilding(ctx, building) {
-  const x = building.x * TILE;
-  const y = building.y * TILE;
-  const w = building.width * TILE;
-  const h = building.height * TILE;
-  const v = building.variant ?? 0;
-
-  // Town-hall e um terço das casas usam sprites reais do tileset.
-  if (ART.village) {
-    if (building.type === 'town-hall') return drawSpriteBuilding(ctx, SPRITES.longhouse, x, y, w, h);
-    if (building.type === 'house' && v % 3 === 0) return drawSpriteBuilding(ctx, SPRITES.cottage, x, y, w, h);
-    if (building.type === 'house' && v % 3 === 1) return drawSpriteBuilding(ctx, SPRITES.longhouse, x, y, w, h);
-  }
-
-  const mat = MATERIALS[building.material] ?? MATERIALS.wood;
-  const roofHeight = Math.max(12, Math.round(h * (0.44 + (v % 3) * 0.05)));
-  const hipped = v % 2 === 0 && building.type !== 'house';
-
-  const wallTop = y + roofHeight;
-  const wallH = h - roofHeight - 2;
-  rect(ctx, 'rgba(15,20,14,.24)', x + 2, y + h - 1, w - 2, 3); // oclusão de contato
-  rect(ctx, mat.trim, x + 2, wallTop - 2, w - 4, h - roofHeight + 2);
-  rect(ctx, mat.wall, x + 3, wallTop, w - 6, wallH);
-  // Volume da parede: topo iluminado, base e lateral SE sombreadas.
-  rect(ctx, 'rgba(255,255,255,.09)', x + 3, wallTop, w - 6, 1);
-  rect(ctx, 'rgba(255,255,255,.06)', x + 3, wallTop, 2, wallH);
-  rect(ctx, 'rgba(0,0,0,.15)', x + w - 5, wallTop, 2, wallH);
-  rect(ctx, 'rgba(0,0,0,.12)', x + 3, y + h - 6, w - 6, 4);
-  // Vigas de madeira aparentes na parede.
-  rect(ctx, 'rgba(0,0,0,.12)', x + 3, wallTop + Math.floor(wallH / 2), w - 6, 1);
-  drawRoof(ctx, x, y, w, roofHeight, mat, hipped);
-  drawDoorAndWindows(ctx, building, x, y, w, h, roofHeight, mat);
-  drawBuildingFeatures(ctx, building, x, y, w, h, roofHeight);
-}
-
-// ---- Decorações --------------------------------------------------------------
-
-function drawTree(ctx, x, y, variant = 0) {
-  const px = x * TILE;
-  const py = y * TILE;
-  if (ART.village) {
-    rect(ctx, 'rgba(25,43,25,.24)', px + 1, py + 10, 20, 6);
-    const sprite = variant % 4 === 0 ? SPRITES.grove : SPRITES.tree;
-    const ox = sprite === SPRITES.grove ? -24 : -8;
-    const oy = sprite === SPRITES.grove ? -24 : -28;
-    ctx.drawImage(ART.village, sprite.x, sprite.y, sprite.w, sprite.h, px + ox, py + oy, sprite.w, sprite.h);
-    return;
-  }
-  rect(ctx, 'rgba(25,43,25,.3)', px + 3, py + 10, 16, 6);
-  rect(ctx, '#59452c', px + 7, py + 7, 3, 9);
-  rect(ctx, variant % 2 ? '#284e35' : '#31583a', px + 1, py + 1, 13, 11);
-  rect(ctx, variant % 2 ? '#3e7544' : '#477b46', px - 1, py + 4, 16, 6);
-  rect(ctx, '#5f9452', px + 3, py, 9, 7);
-  rect(ctx, 'rgba(188,216,117,.28)', px + 4, py + 1, 4, 2);
-}
-
-function drawDecoration(ctx, item) {
-  const px = item.x * TILE;
-  const py = item.y * TILE;
-  const v = item.variant ?? hash2(item.x, item.y);
-  switch (item.type) {
-    case 'tree': drawTree(ctx, item.x, item.y, v); break;
-    case 'rock':
-      rect(ctx, 'rgba(25,30,28,.25)', px + 3, py + 12, 10, 3);
-      rect(ctx, '#53655b', px + 4, py + 8, 9, 6); rect(ctx, '#829184', px + 6, py + 6, 6, 3);
-      rect(ctx, 'rgba(255,255,255,.18)', px + 7, py + 7, 2, 1); break;
-    case 'flowers':
-    case 'flower':
-      rect(ctx, '#4a7a44', px + 4, py + 9, 1, 3); rect(ctx, '#4a7a44', px + 10, py + 11, 1, 3);
-      rect(ctx, v % 2 ? '#e2d06a' : '#d88986', px + 3, py + 6, 2, 2);
-      rect(ctx, v % 3 ? '#d88986' : '#cf7fc0', px + 10, py + 9, 2, 2);
-      rect(ctx, '#e7e0a0', px + 7, py + 5, 2, 2); break;
-    case 'well':
-      rect(ctx, 'rgba(25,30,28,.25)', px + 2, py + 12, 12, 3);
-      rect(ctx, '#555b51', px + 2, py + 7, 12, 7); rect(ctx, '#8d9989', px + 3, py + 6, 10, 3);
-      rect(ctx, '#244650', px + 5, py + 8, 6, 3);
-      rect(ctx, '#6a4d2c', px + 3, py + 2, 2, 6); rect(ctx, '#6a4d2c', px + 11, py + 2, 2, 6);
-      rect(ctx, '#8a6a3c', px + 2, py + 1, 12, 3); break;
-    case 'fence':
-      rect(ctx, '#755638', px, py + 7, TILE, 3); rect(ctx, '#a27a4d', px + 2, py + 3, 2, 10); rect(ctx, '#a27a4d', px + 12, py + 3, 2, 10); break;
-    case 'garden':
-    case 'garden_plot':
-      rect(ctx, '#76573b', px + 1, py + 3, 14, 11);
-      for (let i = 3; i < 14; i += 4) rect(ctx, v % 2 ? '#6f9b51' : '#b6893f', px + i, py + 4, 1, 9); break;
-    case 'bush':
-      rect(ctx, 'rgba(25,43,25,.2)', px + 3, py + 12, 10, 3);
-      rect(ctx, '#315b3a', px + 2, py + 7, 12, 7); rect(ctx, '#5b8b4a', px + 4, py + 5, 8, 7);
-      rect(ctx, 'rgba(150,190,110,.4)', px + 5, py + 6, 3, 2); break;
-    case 'grass-tuft':
-      rect(ctx, '#416f43', px + 4, py + 8, 1, 5); rect(ctx, '#7ba356', px + 8, py + 6, 1, 7); rect(ctx, '#416f43', px + 11, py + 9, 1, 4); break;
-    case 'cactus':
-      rect(ctx, 'rgba(25,40,25,.2)', px + 5, py + 13, 6, 2);
-      rect(ctx, '#3f7d4a', px + 6, py + 3, 4, 11); rect(ctx, '#3f7d4a', px + 3, py + 7, 3, 2); rect(ctx, '#3f7d4a', px + 3, py + 5, 2, 3);
-      rect(ctx, '#3f7d4a', px + 10, py + 8, 3, 2); rect(ctx, '#3f7d4a', px + 11, py + 6, 2, 3);
-      rect(ctx, 'rgba(255,255,255,.15)', px + 7, py + 4, 1, 8); break;
-    case 'dead-bush':
-      rect(ctx, '#8a6a44', px + 7, py + 8, 1, 6); rect(ctx, '#8a6a44', px + 4, py + 7, 3, 1); rect(ctx, '#8a6a44', px + 9, py + 6, 3, 1);
-      rect(ctx, '#a2895c', px + 5, py + 9, 6, 1); break;
-    case 'dead-tree':
-      rect(ctx, 'rgba(25,30,28,.22)', px + 4, py + 13, 9, 2);
-      rect(ctx, '#6a4f34', px + 7, py + 2, 3, 12); rect(ctx, '#6a4f34', px + 3, py + 5, 4, 1); rect(ctx, '#6a4f34', px + 10, py + 4, 4, 1);
-      rect(ctx, '#573f28', px + 4, py + 3, 2, 2); break;
-    case 'reeds':
-      rect(ctx, '#5c7a3a', px + 4, py + 5, 1, 9); rect(ctx, '#7a9a4a', px + 7, py + 3, 1, 11); rect(ctx, '#5c7a3a', px + 10, py + 6, 1, 8);
-      rect(ctx, '#b6a24a', px + 6, py + 2, 2, 3); rect(ctx, '#b6a24a', px + 9, py + 5, 2, 2); break;
-    case 'haystack':
-      rect(ctx, 'rgba(25,30,20,.22)', px + 2, py + 13, 12, 2);
-      rect(ctx, '#c99a3d', px + 2, py + 6, 12, 8); rect(ctx, '#e0b95a', px + 4, py + 3, 8, 5);
-      rect(ctx, 'rgba(120,90,40,.4)', px + 2, py + 9, 12, 1); rect(ctx, 'rgba(120,90,40,.4)', px + 2, py + 11, 12, 1); break;
-    case 'cart':
-      rect(ctx, 'rgba(25,30,20,.22)', px + 1, py + 13, 14, 2);
-      rect(ctx, '#7a5a34', px + 2, py + 5, 12, 6); rect(ctx, '#9c7a44', px + 3, py + 6, 10, 2);
-      rect(ctx, '#4a3320', px + 3, py + 11, 3, 3); rect(ctx, '#4a3320', px + 10, py + 11, 3, 3); break;
-    case 'snowman':
-      rect(ctx, 'rgba(120,140,160,.25)', px + 4, py + 13, 8, 2);
-      rect(ctx, '#f3f6f9', px + 4, py + 8, 8, 6); rect(ctx, '#f8fbff', px + 5, py + 3, 6, 6);
-      rect(ctx, '#33373b', px + 6, py + 5, 1, 1); rect(ctx, '#33373b', px + 9, py + 5, 1, 1); rect(ctx, '#e0872f', px + 7, py + 6, 2, 1); break;
-    default:
-      rect(ctx, '#bdc475', px + 7, py + 8, 2, 2);
-  }
-}
-
-const GROUND_DECOS = new Set(['garden', 'garden_plot', 'fence', 'flowers', 'flower', 'rock', 'well', 'reeds', 'grass-tuft', 'cactus', 'dead-bush']);
-const CANOPY_DECOS = new Set(['tree', 'dead-tree']);
-
-export function renderVillageToCanvas(map, options = {}) {
-  const tileSize = options.tileSize ?? TILE;
-  const scale = tileSize / TILE;
-  const canvas = options.canvas ?? document.createElement('canvas');
-  canvas.width = map.width * tileSize;
-  canvas.height = map.height * tileSize;
-  const ctx = canvas.getContext('2d', { alpha: false });
-  ctx.imageSmoothingEnabled = false;
-  ctx.save();
-  ctx.scale(scale, scale);
+  const resolved = optionsWithDefaults(options);
+  const halfW = resolved.tileWidth / 2;
+  const halfH = resolved.tileHeight / 2;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const include = (x, y) => { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); };
 
   for (let y = 0; y < map.height; y += 1) {
-    for (let x = 0; x < map.width; x += 1) drawGroundTile(ctx, map, x, y);
+    for (let x = 0; x < map.width; x += 1) {
+      const point = projectPoint(x, y, levelAt(map, x, y), resolved);
+      include(point.x - halfW, point.y - halfH);
+      include(point.x + halfW, point.y + halfH + levelAt(map, x, y) * resolved.heightStep);
+    }
   }
 
-  const roadSet = new Set(map.roads.map(({ x, y }) => `${x},${y}`));
-  for (const road of map.roads) drawRoadTile(ctx, road.x, road.y, roadSet);
-  drawPlaza(ctx, map.plaza);
-
-  // Passe de sombras longas (NO→SE). Desenhadas em canvas próprio e compostas uma
-  // única vez, para que sobreposições formem união (sem escurecer por empilhamento).
-  const shadow = document.createElement('canvas');
-  shadow.width = canvas.width;
-  shadow.height = canvas.height;
-  const sctx = shadow.getContext('2d');
-  sctx.imageSmoothingEnabled = false;
-  sctx.scale(scale, scale);
-  sctx.fillStyle = '#0a0e07';
-  for (const b of map.buildings) {
-    const bh = b.height * TILE;
-    shadowPoly(sctx, b.x * TILE, b.y * TILE + bh, b.width * TILE, bh * 1.5);
-  }
-  for (const d of map.decorations) {
-    const height = DECO_HEIGHT[d.type];
-    if (height) shadowPoly(sctx, d.x * TILE + 3, d.y * TILE + 15, 10, height);
-  }
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalAlpha = 0.22;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(shadow, 0, 0);
-  ctx.restore();
-
-  const sorted = [
-    ...map.decorations.filter((item) => GROUND_DECOS.has(item.type)),
-    ...map.buildings,
-    ...map.decorations.filter((item) => CANOPY_DECOS.has(item.type) || (!GROUND_DECOS.has(item.type)))
-  ].sort((a, b) => (a.y + (a.height ?? 1)) - (b.y + (b.height ?? 1)));
-  for (const item of sorted) {
-    if ('door' in item) drawBuilding(ctx, item);
-    else drawDecoration(ctx, item);
+  for (const building of map.buildings ?? []) {
+    const footprint = buildingFootprint(building);
+    const level = finite(building.baseLevel, levelAt(map, building.x, building.y));
+    const corners = [
+      projectPoint(building.x - 0.5, building.y - 0.5, level, resolved),
+      projectPoint(building.x + footprint.width - 0.5, building.y - 0.5, level, resolved),
+      projectPoint(building.x + footprint.width - 0.5, building.y + footprint.height - 0.5, level, resolved),
+      projectPoint(building.x - 0.5, building.y + footprint.height - 0.5, level, resolved),
+    ];
+    const vertical = buildingPixels(building, resolved).total;
+    for (const point of corners) {
+      include(point.x - resolved.tileWidth, point.y - vertical - resolved.tileHeight);
+      include(point.x + resolved.tileWidth * 1.75, point.y + resolved.tileHeight * 1.75);
+    }
   }
 
-  ctx.restore();
+  for (const prop of map.props ?? []) {
+    const level = finite(prop.level, levelAt(map, prop.x, prop.y));
+    const point = projectPoint(prop.x, prop.y, level, resolved);
+    const metric = propMetrics(prop, resolved);
+    include(point.x - metric.width / 2 - resolved.tileWidth, point.y - metric.height - resolved.tileHeight);
+    include(point.x + metric.width / 2 + metric.height * 0.45, point.y + metric.height * 0.35 + resolved.tileHeight);
+  }
 
-  // Acabamento estático: tom ambiente por bioma + vinheta suave (embutidos no PNG).
-  ctx.save();
-  ctx.globalCompositeOperation = 'soft-light';
-  ctx.fillStyle = AMBIENT[map.biome] ?? AMBIENT.temperate;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.globalCompositeOperation = 'source-over';
-  const vignette = ctx.createRadialGradient(
-    canvas.width / 2, canvas.height / 2, Math.min(canvas.width, canvas.height) * 0.34,
-    canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) * 0.72
-  );
-  vignette.addColorStop(0, 'rgba(0,0,0,0)');
-  vignette.addColorStop(1, 'rgba(9,13,9,0.22)');
-  ctx.fillStyle = vignette;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.restore();
+  minX = Math.floor(minX - resolved.padding);
+  minY = Math.floor(minY - resolved.padding);
+  maxX = Math.ceil(maxX + resolved.padding);
+  maxY = Math.ceil(maxY + resolved.padding);
+  return Object.freeze({
+    width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY),
+    originX: -minX, originY: -minY, minX, minY, maxX, maxY,
+    ...resolved,
+  });
+}
 
+function makeCanvas(width, height, supplied) {
+  const canvas = supplied ?? (typeof OffscreenCanvas !== 'undefined'
+    ? new OffscreenCanvas(width, height)
+    : typeof document !== 'undefined' ? document.createElement('canvas') : null);
+  if (!canvas) throw new Error('Canvas 2D indisponivel neste ambiente.');
+  canvas.width = width;
+  canvas.height = height;
   return canvas;
 }
 
-function loadImage(src) {
-  const image = new Image();
-  image.decoding = 'async';
-  const loaded = new Promise((resolve, reject) => {
-    image.addEventListener('load', () => resolve(image), { once: true });
-    image.addEventListener('error', reject, { once: true });
-  });
-  image.src = src;
-  return loaded;
+function polygon(ctx, fill, points, stroke = null, lineWidth = 1) {
+  if (!points.length) return;
+  ctx.beginPath();
+  ctx.moveTo(Math.round(points[0].x), Math.round(points[0].y));
+  for (let index = 1; index < points.length; index += 1) ctx.lineTo(Math.round(points[index].x), Math.round(points[index].y));
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth; ctx.stroke(); }
 }
 
-export async function loadArtAssets() {
-  if (ART.village && ART.floor) return ART;
-  const [village, floor] = await Promise.all([
-    loadImage('/assets/tiles/ninja-village.png'),
-    loadImage('/assets/tiles/ninja-floor.png')
-  ]);
-  ART.village = village;
-  ART.floor = floor;
-  return ART;
+function line(ctx, stroke, width, points) {
+  ctx.beginPath();
+  ctx.moveTo(Math.round(points[0].x), Math.round(points[0].y));
+  for (let index = 1; index < points.length; index += 1) ctx.lineTo(Math.round(points[index].x), Math.round(points[index].y));
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = width;
+  ctx.stroke();
+}
+
+function localPoint(x, y, level, state) {
+  const point = projectPoint(x, y, level, state.metrics);
+  return { x: point.x + state.metrics.originX, y: point.y + state.metrics.originY };
+}
+
+function diamondAt(x, y, level, state, inset = 0, lift = 0) {
+  const center = localPoint(x, y, level, state);
+  const halfW = state.metrics.tileWidth / 2 - inset;
+  const halfH = state.metrics.tileHeight / 2 - inset / 2;
+  center.y -= lift;
+  return {
+    center,
+    north: { x: center.x, y: center.y - halfH }, east: { x: center.x + halfW, y: center.y },
+    south: { x: center.x, y: center.y + halfH }, west: { x: center.x - halfW, y: center.y },
+  };
+}
+
+function terrainColors(map, type, x, y) {
+  const palette = TERRAIN[biomeOf(map)] ?? TERRAIN.temperate;
+  const colors = palette[type] ?? palette.grass;
+  const top = colors[hash2(x, y, 17) % colors.length];
+  return { top, east: tint(top, -34), south: tint(top, -49) };
+}
+
+function drawTerrainTile(ctx, map, x, y, state) {
+  const level = levelAt(map, x, y);
+  const type = map.terrain?.[y * map.width + x] ?? 'grass';
+  const shape = diamondAt(x, y, level, state);
+  const colors = terrainColors(map, type, x, y);
+  const xLevel = levelAt(map, x + 1, y);
+  const yLevel = levelAt(map, x, y + 1);
+
+  if (xLevel < level) {
+    const drop = (level - xLevel) * state.metrics.heightStep;
+    polygon(ctx, colors.east, [shape.east, shape.south, { x: shape.south.x, y: shape.south.y + drop }, { x: shape.east.x, y: shape.east.y + drop }], tint(colors.east, -18));
+    if (drop > state.metrics.heightStep * 1.5) {
+      for (let offset = state.metrics.heightStep; offset < drop; offset += state.metrics.heightStep) {
+        line(ctx, 'rgba(38,30,24,.22)', 1, [{ x: shape.east.x, y: shape.east.y + offset }, { x: shape.south.x, y: shape.south.y + offset }]);
+      }
+    }
+  }
+  if (yLevel < level) {
+    const drop = (level - yLevel) * state.metrics.heightStep;
+    polygon(ctx, colors.south, [shape.south, shape.west, { x: shape.west.x, y: shape.west.y + drop }, { x: shape.south.x, y: shape.south.y + drop }], tint(colors.south, -18));
+    if (drop > state.metrics.heightStep * 1.5) {
+      for (let offset = state.metrics.heightStep; offset < drop; offset += state.metrics.heightStep) {
+        line(ctx, 'rgba(28,23,20,.24)', 1, [{ x: shape.south.x, y: shape.south.y + offset }, { x: shape.west.x, y: shape.west.y + offset }]);
+      }
+    }
+  }
+
+  polygon(ctx, colors.top, [shape.north, shape.east, shape.south, shape.west], tint(colors.top, -14));
+  if (type === 'water') {
+    const glint = hash2(x, y, 91) % 5;
+    if (glint < 2) line(ctx, 'rgba(215,244,244,.40)', 1, [
+      { x: shape.west.x + state.metrics.tileWidth * .22, y: shape.center.y + glint },
+      { x: shape.east.x - state.metrics.tileWidth * .24, y: shape.center.y + glint },
+    ]);
+    for (const [dx, dy, edge] of [[1, 0, [shape.east, shape.south]], [0, 1, [shape.south, shape.west]], [-1, 0, [shape.west, shape.north]], [0, -1, [shape.north, shape.east]]]) {
+      const next = map.terrain?.[(y + dy) * map.width + x + dx];
+      if (x + dx >= 0 && y + dy >= 0 && x + dx < map.width && y + dy < map.height && next && next !== 'water') {
+        line(ctx, 'rgba(236,250,235,.60)', 1, edge);
+      }
+    }
+  } else if (level > Math.max(xLevel, yLevel)) {
+    line(ctx, 'rgba(255,244,208,.16)', 1, [shape.west, shape.north, shape.east]);
+  }
+  if (hash2(x, y, 44) % 13 === 0 && type !== 'water' && type !== 'snow') {
+    const dot = shape.center;
+    ctx.fillStyle = 'rgba(46,61,35,.22)';
+    ctx.fillRect(Math.round(dot.x - 2), Math.round(dot.y), 2, 1);
+  }
+}
+
+function drawRoad(ctx, road, map, state) {
+  const level = levelAt(map, road.x, road.y);
+  const isBridge = Boolean(road.bridge);
+  const shape = diamondAt(road.x, road.y, level, state, isBridge ? 1 : 3, isBridge ? 3 : 0);
+  if (isBridge) {
+    polygon(ctx, '#765034', [shape.north, shape.east, { x: shape.south.x, y: shape.south.y + 3 }, { x: shape.west.x, y: shape.west.y + 3 }], '#3d2b20');
+    polygon(ctx, '#a77843', [shape.north, shape.east, shape.south, shape.west], '#4d3525');
+    const orientation = road.orientation ?? 'cross';
+    const count = 5;
+    for (let index = 1; index < count; index += 1) {
+      const t = index / count;
+      if (orientation === 'ns') {
+        const a = { x: shape.north.x * (1 - t) + shape.west.x * t, y: shape.north.y * (1 - t) + shape.west.y * t };
+        const b = { x: shape.east.x * (1 - t) + shape.south.x * t, y: shape.east.y * (1 - t) + shape.south.y * t };
+        line(ctx, 'rgba(69,42,25,.55)', 1, [a, b]);
+      } else {
+        const a = { x: shape.west.x * (1 - t) + shape.south.x * t, y: shape.west.y * (1 - t) + shape.south.y * t };
+        const b = { x: shape.north.x * (1 - t) + shape.east.x * t, y: shape.north.y * (1 - t) + shape.east.y * t };
+        line(ctx, 'rgba(69,42,25,.55)', 1, [a, b]);
+      }
+    }
+    line(ctx, '#d3a25d', 2, [shape.west, shape.north, shape.east]);
+    line(ctx, '#4b3323', 1, [{ x: shape.west.x, y: shape.west.y - 3 }, { x: shape.north.x, y: shape.north.y - 3 }, { x: shape.east.x, y: shape.east.y - 3 }]);
+    return;
+  }
+  polygon(ctx, road.kind === 'plaza' ? '#b5a071' : '#947958', [shape.north, shape.east, shape.south, shape.west], 'rgba(65,49,36,.30)');
+  if (hash2(road.x, road.y, 6) % 4 === 0) {
+    ctx.fillStyle = 'rgba(230,210,170,.35)';
+    ctx.fillRect(Math.round(shape.center.x - 2), Math.round(shape.center.y), 3, 1);
+  }
+}
+
+function isPlazaTile(plaza, x, y) {
+  return plaza && x >= plaza.x && y >= plaza.y && x < plaza.x + plaza.width && y < plaza.y + plaza.height;
+}
+
+function drawPlazaTile(ctx, x, y, level, state) {
+  const shape = diamondAt(x, y, level, state, 1);
+  polygon(ctx, hash2(x, y, 8) % 2 ? '#b9a475' : '#c3ae7d', [shape.north, shape.east, shape.south, shape.west], '#796b4e');
+  line(ctx, 'rgba(245,228,182,.28)', 1, [shape.west, shape.north, shape.east]);
+}
+
+function buildingCorners(building, state) {
+  const footprint = buildingFootprint(building);
+  const level = finite(building.baseLevel, levelAt(state.map, building.x, building.y));
+  const n = localPoint(building.x - .5, building.y - .5, level, state);
+  const e = localPoint(building.x + footprint.width - .5, building.y - .5, level, state);
+  const s = localPoint(building.x + footprint.width - .5, building.y + footprint.height - .5, level, state);
+  const w = localPoint(building.x - .5, building.y + footprint.height - .5, level, state);
+  return { n, e, s, w, footprint, level };
+}
+
+function shifted(point, dy) { return { x: point.x, y: point.y + dy }; }
+
+function mixPoint(a, b, t = .5) { return { x: a.x * (1 - t) + b.x * t, y: a.y * (1 - t) + b.y * t }; }
+
+function drawBuildingShadow(ctx, building, state) {
+  const c = buildingCorners(building, state);
+  const vertical = buildingPixels(building, state.metrics).total;
+  const dx = vertical * .42;
+  const dy = vertical * .20;
+  ctx.save();
+  ctx.globalAlpha = .2;
+  polygon(ctx, '#172019', [c.w, c.s, { x: c.s.x + dx, y: c.s.y + dy }, { x: c.w.x + dx, y: c.w.y + dy }]);
+  ctx.restore();
+}
+
+function drawWindows(ctx, building, wall, side, material, count) {
+  const topA = side === 'east' ? wall.eTop : wall.sTop;
+  const topB = side === 'east' ? wall.sTop : wall.wTop;
+  const bottomA = side === 'east' ? wall.e : wall.s;
+  const bottomB = side === 'east' ? wall.s : wall.w;
+  for (let index = 1; index <= count; index += 1) {
+    const t = index / (count + 1);
+    const top = mixPoint(topA, topB, t);
+    const bottom = mixPoint(bottomA, bottomB, t);
+    const center = mixPoint(top, bottom, .56);
+    const dx = side === 'east' ? -3 : 3;
+    polygon(ctx, material.trim, [
+      { x: center.x - 4, y: center.y - 5 }, { x: center.x + dx, y: center.y - 2 },
+      { x: center.x + dx, y: center.y + 5 }, { x: center.x - 4, y: center.y + 2 },
+    ]);
+    polygon(ctx, side === 'east' ? '#71939a' : '#4e707a', [
+      { x: center.x - 3, y: center.y - 4 }, { x: center.x + dx - Math.sign(dx), y: center.y - 2 },
+      { x: center.x + dx - Math.sign(dx), y: center.y + 3 }, { x: center.x - 3, y: center.y + 1 },
+    ]);
+  }
+}
+
+function drawBuilding(ctx, building, state) {
+  const c = buildingCorners(building, state);
+  const pixels = buildingPixels(building, state.metrics);
+  const wallKey = { timber: 'wood', plaster: 'tile' }[building.material] ?? building.material;
+  const wallMaterial = MATERIALS[wallKey] ?? MATERIALS.wood;
+  const roofMaterial = MATERIALS[building.roof] ?? wallMaterial;
+  const mat = {
+    ...wallMaterial,
+    roof: roofMaterial.roof,
+    roofLit: roofMaterial.roofLit,
+    roofDark: roofMaterial.roofDark,
+  };
+  const wallLift = -pixels.wall;
+  const wall = { ...c, nTop: shifted(c.n, wallLift), eTop: shifted(c.e, wallLift), sTop: shifted(c.s, wallLift), wTop: shifted(c.w, wallLift) };
+
+  polygon(ctx, '#5a5448', [c.e, c.s, c.w, c.n], '#39352f');
+  polygon(ctx, mat.shade, [wall.eTop, wall.sTop, wall.s, wall.e], mat.trim);
+  polygon(ctx, mat.wall, [wall.sTop, wall.wTop, wall.w, wall.s], mat.trim);
+  line(ctx, 'rgba(255,248,220,.20)', 1, [wall.wTop, wall.sTop]);
+
+  const beams = Math.max(1, Math.floor((c.footprint.width + c.footprint.height) / 3));
+  for (let index = 1; index <= beams; index += 1) {
+    const t = index / (beams + 1);
+    const a = mixPoint(wall.sTop, wall.wTop, t);
+    const b = mixPoint(wall.s, wall.w, t);
+    line(ctx, 'rgba(70,47,29,.45)', 1, [a, b]);
+  }
+  drawWindows(ctx, building, wall, 'east', mat, Math.max(1, c.footprint.height - 1));
+  drawWindows(ctx, building, wall, 'south', mat, Math.max(1, c.footprint.width - 1));
+
+  const roofBase = { n: wall.nTop, e: wall.eTop, s: wall.sTop, w: wall.wTop };
+  const roofLift = -pixels.roof;
+  const longX = c.footprint.width >= c.footprint.height;
+  let ridgeA, ridgeB;
+  if (longX) {
+    ridgeA = shifted(mixPoint(roofBase.n, roofBase.w, .5), roofLift);
+    ridgeB = shifted(mixPoint(roofBase.e, roofBase.s, .5), roofLift);
+  } else {
+    ridgeA = shifted(mixPoint(roofBase.n, roofBase.e, .5), roofLift);
+    ridgeB = shifted(mixPoint(roofBase.w, roofBase.s, .5), roofLift);
+  }
+  polygon(ctx, mat.roofDark, [ridgeA, ridgeB, roofBase.s, roofBase.w], tint(mat.roofDark, -10));
+  polygon(ctx, mat.roof, [roofBase.n, roofBase.e, ridgeB, ridgeA], tint(mat.roofDark, -4));
+  polygon(ctx, mat.roofLit, longX ? [ridgeB, roofBase.e, roofBase.s] : [ridgeA, roofBase.n, roofBase.w], tint(mat.roof, -12));
+  line(ctx, tint(mat.roofLit, 24), 2, [ridgeA, ridgeB]);
+  line(ctx, 'rgba(20,18,16,.35)', 2, [roofBase.w, roofBase.s, roofBase.e]);
+
+  const facing = building.orientation ?? building.facing ?? 'south';
+  const doorSide = facing === 'east' || facing === 'west' ? 'east' : 'south';
+  const a = doorSide === 'east' ? wall.eTop : wall.sTop;
+  const b = doorSide === 'east' ? wall.sTop : wall.wTop;
+  const ga = doorSide === 'east' ? wall.e : wall.s;
+  const gb = doorSide === 'east' ? wall.s : wall.w;
+  const topMid = mixPoint(a, b, .5);
+  const groundMid = mixPoint(ga, gb, .5);
+  const doorTop = mixPoint(topMid, groundMid, .42);
+  polygon(ctx, '#3b291e', [
+    { x: doorTop.x - 4, y: doorTop.y - 2 }, { x: doorTop.x + 4, y: doorTop.y + 1 },
+    { x: groundMid.x + 4, y: groundMid.y }, { x: groundMid.x - 4, y: groundMid.y - 3 },
+  ], mat.trim);
+
+  drawBuildingFeature(ctx, building, { ...wall, ridgeA, ridgeB, pixels }, state);
+}
+
+function drawBuildingFeature(ctx, building, shape, state) {
+  const type = building.type ?? 'house';
+  const center = mixPoint(shape.ridgeA, shape.ridgeB, .5);
+  if (type === 'chapel') {
+    const top = { x: center.x, y: center.y - state.metrics.tileHeight * 2.2 };
+    line(ctx, '#4c3826', 3, [center, top]);
+    line(ctx, '#d8c88e', 2, [{ x: top.x - 6, y: top.y + 5 }, { x: top.x + 6, y: top.y + 5 }]);
+  } else if (type === 'mill') {
+    const hub = { x: shape.sTop.x + 5, y: shape.sTop.y - 6 };
+    ctx.fillStyle = '#d0aa68';
+    for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 2) {
+      const end = { x: hub.x + Math.cos(angle) * 23, y: hub.y + Math.sin(angle) * 18 };
+      line(ctx, '#6b4b2c', 3, [hub, end]);
+    }
+    ctx.beginPath(); ctx.arc(hub.x, hub.y, 4, 0, Math.PI * 2); ctx.fill();
+  } else if (type === 'blacksmith' || type === 'smithy') {
+    const chimney = { x: shape.ridgeB.x - 8, y: shape.ridgeB.y + 4 };
+    polygon(ctx, '#625b50', [
+      { x: chimney.x - 4, y: chimney.y }, { x: chimney.x + 3, y: chimney.y + 2 },
+      { x: chimney.x + 3, y: chimney.y - 18 }, { x: chimney.x - 4, y: chimney.y - 20 },
+    ], '#383833');
+  } else if (type === 'watchtower' || type === 'tower') {
+    const y = center.y - state.metrics.tileHeight * 1.2;
+    line(ctx, '#6c2929', 2, [{ x: center.x, y: center.y }, { x: center.x, y }]);
+    polygon(ctx, '#b8443b', [{ x: center.x, y }, { x: center.x + 18, y: y + 5 }, { x: center.x, y: y + 10 }]);
+  } else if (type === 'inn' || type === 'hall' || type === 'town-hall' || type === 'townHall') {
+    const mark = { x: shape.sTop.x - 10, y: shape.sTop.y + 7 };
+    polygon(ctx, '#92372f', [mark, { x: mark.x + 10, y: mark.y + 3 }, { x: mark.x + 10, y: mark.y + 15 }, { x: mark.x, y: mark.y + 12 }], '#542b25');
+  } else if (type === 'market' || type === 'shop') {
+    line(ctx, '#e8d7a8', 3, [shape.sTop, shape.wTop]);
+    line(ctx, '#a43e35', 2, [mixPoint(shape.sTop, shape.wTop, .2), mixPoint(shape.sTop, shape.wTop, .4)]);
+  }
+}
+
+function propAssetType(prop, biome) {
+  if (prop.type === 'oak') return 'temperate-tree';
+  if (prop.type === 'tree') {
+    if (biome === 'snowy') return 'snowy-pine';
+    if (biome === 'wetland') return 'swamp-willow';
+    return 'temperate-tree';
+  }
+  if (prop.type === 'pine') return 'snowy-pine';
+  if (prop.type === 'willow') return 'swamp-willow';
+  if (prop.type === 'cactus') return 'desert-cactus';
+  return prop.type;
+}
+
+function drawPropShadow(ctx, prop, state) {
+  const level = finite(prop.level, levelAt(state.map, prop.x, prop.y));
+  const center = localPoint(prop.x, prop.y, level, state);
+  const metric = propMetrics(prop, state.metrics);
+  ctx.save();
+  ctx.globalAlpha = .18;
+  ctx.fillStyle = '#142019';
+  ctx.beginPath();
+  ctx.ellipse(center.x + metric.height * .18, center.y + metric.height * .10, metric.width * .35, Math.max(3, metric.height * .08), .22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawProp(ctx, prop, state) {
+  const level = finite(prop.level, levelAt(state.map, prop.x, prop.y));
+  const center = localPoint(prop.x, prop.y, level, state);
+  const type = propAssetType(prop, biomeOf(state.map));
+  const asset = ART.get(type);
+  if (asset) {
+    const scale = state.metrics.tileWidth / 32;
+    const width = (asset.naturalWidth || asset.width) * scale;
+    const height = (asset.naturalHeight || asset.height) * scale;
+    ctx.drawImage(asset, Math.round(center.x - width / 2), Math.round(center.y - height + state.metrics.tileHeight / 2), Math.round(width), Math.round(height));
+    return;
+  }
+  drawProceduralProp(ctx, { ...prop, type }, center, state);
+}
+
+function drawProceduralProp(ctx, prop, center, state) {
+  const s = state.metrics.tileWidth / 32;
+  const rect = (fill, x, y, w, h) => { ctx.fillStyle = fill; ctx.fillRect(Math.round(center.x + x * s), Math.round(center.y + y * s), Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s))); };
+  switch (prop.type) {
+    case 'tree': case 'temperate-tree': case 'snowy-pine': case 'pine': case 'willow': case 'swamp-willow': {
+      const snowy = prop.type.includes('snow') || prop.type === 'pine';
+      const willow = prop.type.includes('willow');
+      rect('#68482e', -2, -31, 5, 35);
+      const foliage = snowy ? ['#2f5650', '#406d60', '#dfe9e7'] : willow ? ['#355d3b', '#4d7a49', '#6d9659'] : ['#285b3c', '#3e7647', '#629554'];
+      polygon(ctx, foliage[0], [{ x: center.x, y: center.y - 73*s }, { x: center.x + 25*s, y: center.y - 30*s }, { x: center.x - 25*s, y: center.y - 30*s }]);
+      polygon(ctx, foliage[1], [{ x: center.x, y: center.y - 63*s }, { x: center.x + 31*s, y: center.y - 20*s }, { x: center.x - 31*s, y: center.y - 20*s }]);
+      polygon(ctx, foliage[2], [{ x: center.x - 8*s, y: center.y - 62*s }, { x: center.x + 15*s, y: center.y - 34*s }, { x: center.x - 22*s, y: center.y - 34*s }]);
+      break;
+    }
+    case 'cactus': case 'desert-cactus':
+      rect('#397b4b', -4, -42, 8, 44); rect('#397b4b', -13, -27, 11, 7); rect('#397b4b', -13, -34, 6, 13); rect('#4d9660', 3, -23, 11, 7); rect('#4d9660', 9, -29, 6, 12); break;
+    case 'rock':
+      polygon(ctx, '#67736c', [{ x: center.x-16*s,y:center.y },{x:center.x-12*s,y:center.y-14*s},{x:center.x+2*s,y:center.y-21*s},{x:center.x+16*s,y:center.y-7*s},{x:center.x+11*s,y:center.y+2*s}], '#39443e');
+      line(ctx, '#a2aca2', 2*s, [{x:center.x-10*s,y:center.y-12*s},{x:center.x+1*s,y:center.y-17*s},{x:center.x+8*s,y:center.y-10*s}]); break;
+    case 'well':
+      polygon(ctx, '#666d67', [{x:center.x-16*s,y:center.y-8*s},{x:center.x,y:center.y-16*s},{x:center.x+16*s,y:center.y-8*s},{x:center.x,y:center.y}], '#3d4642');
+      line(ctx, '#8c6840', 3*s, [{x:center.x-12*s,y:center.y-10*s},{x:center.x-12*s,y:center.y-34*s},{x:center.x+12*s,y:center.y-22*s},{x:center.x+12*s,y:center.y-2*s}]); break;
+    case 'cart':
+      polygon(ctx, '#91673b', [{x:center.x-23*s,y:center.y-20*s},{x:center.x+5*s,y:center.y-8*s},{x:center.x+21*s,y:center.y-16*s},{x:center.x-7*s,y:center.y-28*s}], '#4d3523');
+      ctx.fillStyle='#443023'; ctx.beginPath(); ctx.arc(center.x-13*s,center.y-6*s,7*s,0,Math.PI*2);ctx.fill(); ctx.beginPath();ctx.arc(center.x+13*s,center.y-6*s,7*s,0,Math.PI*2);ctx.fill(); break;
+    case 'haystack':
+      polygon(ctx, '#c99b42', [{x:center.x-18*s,y:center.y},{x:center.x-14*s,y:center.y-24*s},{x:center.x,y:center.y-35*s},{x:center.x+17*s,y:center.y-20*s},{x:center.x+18*s,y:center.y}], '#88632e');
+      line(ctx,'#efd072',2*s,[{x:center.x-12*s,y:center.y-21*s},{x:center.x+13*s,y:center.y-11*s}]); break;
+    case 'fence':
+      line(ctx, '#765032', 3*s, [{x:center.x-16*s,y:center.y-8*s},{x:center.x+16*s,y:center.y+8*s}]);
+      line(ctx, '#aa7948', 3*s, [{x:center.x-11*s,y:center.y-15*s},{x:center.x-11*s,y:center.y-1*s}]); line(ctx,'#aa7948',3*s,[{x:center.x+11*s,y:center.y-4*s},{x:center.x+11*s,y:center.y+12*s}]); break;
+    case 'bush':
+      polygon(ctx, '#37633e', [{x:center.x-15*s,y:center.y},{x:center.x-13*s,y:center.y-15*s},{x:center.x,y:center.y-23*s},{x:center.x+16*s,y:center.y-10*s},{x:center.x+14*s,y:center.y}], '#274b32');
+      polygon(ctx, '#5a8c50', [{x:center.x-9*s,y:center.y-10*s},{x:center.x-3*s,y:center.y-19*s},{x:center.x+8*s,y:center.y-12*s},{x:center.x+4*s,y:center.y-5*s}]); break;
+    default:
+      rect('#657f4a', -1, -13, 2, 14); rect('#8ea95c', -7, -9, 6, 2); rect('#8ea95c', 1, -6, 7, 2);
+  }
+}
+
+function depthForBuilding(building) {
+  const footprint = buildingFootprint(building);
+  return Math.floor(building.x + building.y + footprint.width + footprint.height - 2);
+}
+
+function depthForProp(prop) { return Math.floor(prop.x + prop.y); }
+
+function ambientColor(biome) {
+  return { temperate: 'rgba(255,224,155,.07)', arid: 'rgba(255,195,112,.10)', snowy: 'rgba(170,210,255,.08)', wetland: 'rgba(127,187,154,.08)' }[biome] ?? 'rgba(255,224,155,.07)';
+}
+
+/** Renderiza o mapa completo, independente do enquadramento atual da camera. */
+export function renderVillageToCanvas(map, options = {}) {
+  const metrics = computeRenderBounds(map, options);
+  const canvas = makeCanvas(metrics.width, metrics.height, options.canvas);
+  const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) throw new Error('Contexto Canvas 2D indisponivel.');
+  ctx.imageSmoothingEnabled = false;
+  const biome = biomeOf(map);
+  ctx.fillStyle = biome === 'snowy' ? '#d5e0df' : biome === 'arid' ? '#b9955f' : '#294737';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const state = { map, metrics };
+  const roads = new Map((map.roads ?? []).map((road) => [`${road.x},${road.y}`, road]));
+  const buildingsByDepth = new Map();
+  const propsByDepth = new Map();
+  for (const building of map.buildings ?? []) {
+    const depth = depthForBuilding(building);
+    if (!buildingsByDepth.has(depth)) buildingsByDepth.set(depth, []);
+    buildingsByDepth.get(depth).push(building);
+  }
+  for (const prop of map.props ?? []) {
+    const depth = depthForProp(prop);
+    if (!propsByDepth.has(depth)) propsByDepth.set(depth, []);
+    propsByDepth.get(depth).push(prop);
+  }
+
+  const maxDepth = map.width + map.height + 8;
+  for (let depth = 0; depth <= maxDepth; depth += 1) {
+    const xStart = Math.max(0, depth - (map.height - 1));
+    const xEnd = Math.min(map.width - 1, depth);
+    for (let x = xStart; x <= xEnd; x += 1) {
+      const y = depth - x;
+      drawTerrainTile(ctx, map, x, y, state);
+      const road = roads.get(`${x},${y}`);
+      if (road) drawRoad(ctx, road, map, state);
+      else if (isPlazaTile(map.plaza, x, y)) drawPlazaTile(ctx, x, y, levelAt(map, x, y), state);
+    }
+    for (const building of buildingsByDepth.get(depth) ?? []) drawBuildingShadow(ctx, building, state);
+    for (const prop of propsByDepth.get(depth) ?? []) drawPropShadow(ctx, prop, state);
+    const objects = [
+      ...(buildingsByDepth.get(depth) ?? []).map((value) => ({ kind: 'building', value })),
+      ...(propsByDepth.get(depth) ?? []).map((value) => ({ kind: 'prop', value })),
+    ].sort((a, b) => (a.value.x - b.value.x) || (a.kind === 'building' ? -1 : 1));
+    for (const object of objects) {
+      if (object.kind === 'building') drawBuilding(ctx, object.value, state);
+      else drawProp(ctx, object.value, state);
+    }
+  }
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'soft-light';
+  ctx.fillStyle = ambientColor(biome);
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+  return canvas;
+}
+
+function loadImage(path) {
+  if (typeof Image === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.decoding = 'async';
+    image.addEventListener('load', () => resolve(image), { once: true });
+    image.addEventListener('error', () => resolve(null), { once: true });
+    image.src = path;
+  });
+}
+
+/** Carrega props opcionais. Falhas sao deliberadamente substituidas por arte procedural. */
+export async function loadArtAssets(basePath = '/assets/props') {
+  const entries = Object.entries(ART_MANIFEST);
+  await Promise.all(entries.map(async ([key, originalPath]) => {
+    if (ART.has(key)) return;
+    const file = originalPath.slice(originalPath.lastIndexOf('/') + 1);
+    const image = await loadImage(`${String(basePath).replace(/\/$/, '')}/${file}`);
+    if (image) ART.set(key, image);
+  }));
+  return Object.fromEntries(ART.entries());
 }
 
 export class VillageRenderer {
   constructor(canvas) {
+    if (!canvas) throw new TypeError('VillageRenderer requer um canvas visivel.');
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false });
     this.ctx.imageSmoothingEnabled = false;
-    this.world = null;
     this.map = null;
+    this.world = null;
     this.camera = { x: 0, y: 0, zoom: 1 };
     this.drag = null;
     this.frame = 0;
-    this.resizeObserver = new ResizeObserver(() => this.resize());
-    this.resizeObserver.observe(canvas.parentElement);
+    this.dpr = 1;
     this.bindInput();
+    this.resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => this.resize()) : null;
+    if (this.resizeObserver && canvas.parentElement) this.resizeObserver.observe(canvas.parentElement);
     this.resize();
   }
 
@@ -521,41 +687,35 @@ export class VillageRenderer {
 
   resize() {
     const rect = this.canvas.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-    this.canvas.height = Math.max(1, Math.floor(rect.height * dpr));
-    this.dpr = dpr;
+    this.dpr = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2);
+    this.canvas.width = Math.max(1, Math.round((rect.width || this.canvas.clientWidth || 1) * this.dpr));
+    this.canvas.height = Math.max(1, Math.round((rect.height || this.canvas.clientHeight || 1) * this.dpr));
     this.draw();
   }
 
+  viewport() { return { width: this.canvas.width / this.dpr, height: this.canvas.height / this.dpr }; }
+
   notifyCamera() {
-    this.canvas.dispatchEvent(new CustomEvent('camerachange', { detail: { ...this.camera } }));
+    if (typeof CustomEvent !== 'undefined') this.canvas.dispatchEvent(new CustomEvent('camerachange', { detail: { ...this.camera } }));
   }
 
   clampCamera() {
     if (!this.world) return;
-    const viewW = this.canvas.width / this.dpr;
-    const viewH = this.canvas.height / this.dpr;
-    const worldW = this.world.width * this.camera.zoom;
-    const worldH = this.world.height * this.camera.zoom;
-    const marginX = Math.min(viewW * .35, 220);
-    const marginY = Math.min(viewH * .35, 180);
-    this.camera.x = worldW <= viewW
-      ? (viewW - worldW) / 2
-      : Math.min(marginX, Math.max(viewW - worldW - marginX, this.camera.x));
-    this.camera.y = worldH <= viewH
-      ? (viewH - worldH) / 2
-      : Math.min(marginY, Math.max(viewH - worldH - marginY, this.camera.y));
+    const view = this.viewport();
+    const worldWidth = this.world.width * this.camera.zoom;
+    const worldHeight = this.world.height * this.camera.zoom;
+    const marginX = Math.min(view.width * .35, 220);
+    const marginY = Math.min(view.height * .35, 180);
+    this.camera.x = worldWidth <= view.width ? (view.width - worldWidth) / 2 : clamp(this.camera.x, view.width - worldWidth - marginX, marginX);
+    this.camera.y = worldHeight <= view.height ? (view.height - worldHeight) / 2 : clamp(this.camera.y, view.height - worldHeight - marginY, marginY);
   }
 
   center() {
     if (!this.world) return;
-    const viewW = this.canvas.width / this.dpr;
-    const viewH = this.canvas.height / this.dpr;
-    const fit = Math.min((viewW - 50) / this.world.width, (viewH - 50) / this.world.height);
-    this.camera.zoom = Math.max(.35, Math.min(2.5, fit));
-    this.camera.x = (viewW - this.world.width * this.camera.zoom) / 2;
-    this.camera.y = (viewH - this.world.height * this.camera.zoom) / 2;
+    const view = this.viewport();
+    this.camera.zoom = clamp(Math.min((view.width - 32) / this.world.width, (view.height - 32) / this.world.height), .18, 3);
+    this.camera.x = (view.width - this.world.width * this.camera.zoom) / 2;
+    this.camera.y = (view.height - this.world.height * this.camera.zoom) / 2;
     this.clampCamera();
     this.notifyCamera();
     this.draw();
@@ -563,13 +723,13 @@ export class VillageRenderer {
 
   setZoom(nextZoom, focusX, focusY) {
     if (!this.world) return;
-    const old = this.camera.zoom;
-    const zoom = Math.max(.25, Math.min(4, nextZoom));
+    const oldZoom = this.camera.zoom;
+    const zoom = clamp(finite(nextZoom, oldZoom), .15, 5);
     const rect = this.canvas.getBoundingClientRect();
-    const fx = focusX ?? rect.width / 2;
-    const fy = focusY ?? rect.height / 2;
-    const worldX = (fx - this.camera.x) / old;
-    const worldY = (fy - this.camera.y) / old;
+    const fx = finite(focusX, rect.width / 2);
+    const fy = finite(focusY, rect.height / 2);
+    const worldX = (fx - this.camera.x) / oldZoom;
+    const worldY = (fy - this.camera.y) / oldZoom;
     this.camera.zoom = zoom;
     this.camera.x = fx - worldX * zoom;
     this.camera.y = fy - worldY * zoom;
@@ -579,30 +739,27 @@ export class VillageRenderer {
   }
 
   bindInput() {
-    this.canvas.addEventListener('pointerdown', (event) => {
-      this.canvas.setPointerCapture(event.pointerId);
-      this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, cx: this.camera.x, cy: this.camera.y };
-      this.canvas.classList.add('dragging');
-    });
-    this.canvas.addEventListener('pointermove', (event) => {
-      if (!this.drag || this.drag.id !== event.pointerId) return;
-      this.camera.x = this.drag.cx + event.clientX - this.drag.x;
-      this.camera.y = this.drag.cy + event.clientY - this.drag.y;
-      this.clampCamera();
-      this.draw();
-    });
-    const stop = (event) => {
-      if (this.drag?.id === event.pointerId) this.drag = null;
-      this.canvas.classList.remove('dragging');
+    this.onPointerDown = (event) => {
+      this.canvas.setPointerCapture?.(event.pointerId);
+      this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, cameraX: this.camera.x, cameraY: this.camera.y };
+      this.canvas.classList?.add('dragging');
     };
-    this.canvas.addEventListener('pointerup', stop);
-    this.canvas.addEventListener('pointercancel', stop);
-    this.canvas.addEventListener('wheel', (event) => {
+    this.onPointerMove = (event) => {
+      if (!this.drag || this.drag.id !== event.pointerId) return;
+      this.camera.x = this.drag.cameraX + event.clientX - this.drag.x;
+      this.camera.y = this.drag.cameraY + event.clientY - this.drag.y;
+      this.clampCamera(); this.notifyCamera(); this.draw();
+    };
+    this.onPointerEnd = (event) => {
+      if (this.drag?.id === event.pointerId) this.drag = null;
+      this.canvas.classList?.remove('dragging');
+    };
+    this.onWheel = (event) => {
       event.preventDefault();
       const rect = this.canvas.getBoundingClientRect();
       this.setZoom(this.camera.zoom * (event.deltaY > 0 ? .86 : 1.16), event.clientX - rect.left, event.clientY - rect.top);
-    }, { passive: false });
-    this.canvas.addEventListener('keydown', (event) => {
+    };
+    this.onKeyDown = (event) => {
       const amount = event.shiftKey ? 80 : 32;
       if (event.key === 'ArrowLeft') this.camera.x += amount;
       else if (event.key === 'ArrowRight') this.camera.x -= amount;
@@ -611,36 +768,50 @@ export class VillageRenderer {
       else if (event.key === '+' || event.key === '=') return this.setZoom(this.camera.zoom * 1.2);
       else if (event.key === '-') return this.setZoom(this.camera.zoom / 1.2);
       else return;
-      event.preventDefault();
-      this.clampCamera();
-      this.draw();
-    });
+      event.preventDefault(); this.clampCamera(); this.notifyCamera(); this.draw();
+    };
+    this.canvas.addEventListener('pointerdown', this.onPointerDown);
+    this.canvas.addEventListener('pointermove', this.onPointerMove);
+    this.canvas.addEventListener('pointerup', this.onPointerEnd);
+    this.canvas.addEventListener('pointercancel', this.onPointerEnd);
+    this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+    this.canvas.addEventListener('keydown', this.onKeyDown);
   }
 
   draw() {
-    if (this.frame) return;
-    this.frame = requestAnimationFrame(() => {
-      this.frame = 0;
-      this.drawNow();
-    });
+    if (this.frame || typeof requestAnimationFrame === 'undefined') return this.drawNow();
+    this.frame = requestAnimationFrame(() => { this.frame = 0; this.drawNow(); });
   }
 
   drawNow() {
-    if (!this.ctx || !this.dpr) return;
-    const ctx = this.ctx;
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.imageSmoothingEnabled = false;
-    rect(ctx, '#1a3027', 0, 0, this.canvas.width / this.dpr, this.canvas.height / this.dpr);
+    if (!this.ctx) return;
+    const view = this.viewport();
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.ctx.imageSmoothingEnabled = false;
+    this.ctx.fillStyle = '#14271f';
+    this.ctx.fillRect(0, 0, view.width, view.height);
     if (!this.world) return;
-    ctx.save();
-    ctx.translate(Math.round(this.camera.x), Math.round(this.camera.y));
-    ctx.scale(this.camera.zoom, this.camera.zoom);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(this.world, 0, 0);
-    ctx.restore();
+    this.ctx.save();
+    this.ctx.translate(Math.round(this.camera.x), Math.round(this.camera.y));
+    this.ctx.scale(this.camera.zoom, this.camera.zoom);
+    this.ctx.imageSmoothingEnabled = false;
+    this.ctx.drawImage(this.world, 0, 0);
+    this.ctx.restore();
   }
 
-  exportCanvas(tileSize = TILE) {
-    return renderVillageToCanvas(this.map, { tileSize });
+  exportCanvas(options = {}) {
+    if (!this.map) throw new Error('Nenhum mapa foi definido para exportacao.');
+    return renderVillageToCanvas(this.map, options);
+  }
+
+  destroy() {
+    this.resizeObserver?.disconnect();
+    if (this.frame && typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(this.frame);
+    this.canvas.removeEventListener('pointerdown', this.onPointerDown);
+    this.canvas.removeEventListener('pointermove', this.onPointerMove);
+    this.canvas.removeEventListener('pointerup', this.onPointerEnd);
+    this.canvas.removeEventListener('pointercancel', this.onPointerEnd);
+    this.canvas.removeEventListener('wheel', this.onWheel);
+    this.canvas.removeEventListener('keydown', this.onKeyDown);
   }
 }

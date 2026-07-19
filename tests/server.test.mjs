@@ -21,6 +21,7 @@ async function startServer() {
     env: { ...process.env, PORT: String(port) },
     stdio: ['ignore', 'pipe', 'pipe']
   });
+
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Servidor não iniciou')), 5000);
     child.once('error', reject);
@@ -34,18 +35,18 @@ async function startServer() {
   return { child, base: `http://127.0.0.1:${port}` };
 }
 
-test('servidor entrega o app e rejeita requisições inseguras sem encerrar', async (t) => {
+test('servidor entrega a aplicação v2 e bloqueia requisições inseguras', async (t) => {
   const { child, base } = await startServer();
   t.after(() => child.kill());
 
   const home = await fetch(`${base}/`);
   assert.equal(home.status, 200);
-  assert.match(await home.text(), /Vilarejo/);
+  assert.match(await home.text(), /Vilarejo II/);
   assert.match(home.headers.get('content-type'), /^text\/html/);
 
-  const asset = await fetch(`${base}/assets/tiles/ninja-village.png`);
-  assert.equal(asset.status, 200);
-  assert.equal(asset.headers.get('content-type'), 'image/png');
+  const module = await fetch(`${base}/src/core/index.js`);
+  assert.equal(module.status, 200);
+  assert.match(module.headers.get('content-type'), /^text\/javascript/);
 
   const malformed = await fetch(`${base}/%ZZ`);
   assert.equal(malformed.status, 400);
@@ -56,6 +57,5 @@ test('servidor entrega o app e rejeita requisições inseguras sem encerrar', as
   const post = await fetch(`${base}/`, { method: 'POST' });
   assert.equal(post.status, 405);
 
-  const alive = await fetch(`${base}/src/app.js`);
-  assert.equal(alive.status, 200);
+  assert.equal((await fetch(`${base}/src/app.js`)).status, 200);
 });

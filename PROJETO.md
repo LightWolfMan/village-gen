@@ -1,33 +1,56 @@
-# Vilarejo — Gerador procedural de vila 2D
-
-![Prévia do gerador procedural](village-preview.png)
+# Vilarejo II — gerador procedural isométrico
 
 ## Estado atual
 
-O projeto entrega uma aplicação web local e offline capaz de criar vilas medievais orgânicas determinísticas. A interface oferece seed editável e aleatória, **seletor de bioma** (temperado, árido, nevado, úmido), mapa entre 80 e 160 tiles, densidade residencial, quantidade de água, **rio opcional**, câmera com arraste e zoom, centralização, **legenda de terreno** com barra de composição e exportação do mapa completo em PNG.
+Esta é uma reescrita integral da aplicação. A versão em uso não importa módulos, assets, modos de câmera ou contratos do protótipo top-down anterior. O produto atual gera assentamentos 2.5D isométricos determinísticos, roda localmente no navegador e não possui dependências de execução além do Node.js usado pelo servidor estático.
 
-O núcleo gera elevação e umidade por value noise e classifica sete terrenos (água, areia, campo, mata, terra, neve e pântano) conforme o bioma escolhido, abre uma praça central de tamanho variável, conecta as bordas e ramais por A* ponderado, distribui lotes orientados para as vias e valida limites, sobreposição, água e conectividade de todas as portas. A configuração padrão produz entre 25 e 40 casas mais serviços centrais (prefeitura, hospedaria, loja, ferraria) e alguns serviços extras conforme o tamanho (capela, mercado, moinho, torre). Cada edifício recebe uma `variant` e um `material` estáveis por seed, para variedade visual.
+O gerador oferece quatro biomas (campo temperado, sertão árido, planalto nevado e pântano), dois traçados (orgânico e quadras), três escalas de assentamento e mapas de 72, 96 ou 128 tiles. Cidades usam 128 tiles automaticamente. Relevo, água, rios opcionais, estradas, pontes, praça, lotes, casas, serviços e objetos de cenário são derivados da seed. Serviços ocupam a região central e as casas se espalham gradualmente, evitando o aspecto de construções aleatórias dispersas pelo mapa.
 
-O renderizador desenha o terreno com texturas reais amostradas de `ninja-floor.png` (variação por coordenada, sem emenda), estradas de terra, e edifícios que combinam sprites reais de `ninja-village.png` com desenho procedural por material (sapê, telha, madeira, pedra), incluindo capela com cruz, moinho com pás, torre com ameias e bandeira, ferraria com chaminé acesa, entre outros. **Como a geração passou a usar mais terrenos e variação, seeds antigas renderizam de forma diferente** — comportamento esperado num gerador procedural.
+## Execução
 
-Sobre isso há um passe **2.5D** (luz padronizada no noroeste): relevo do terreno por *hillshade* a partir da elevação já calculada, sombras longas e direcionais projetadas para o sudeste (unificadas em uma camada para não escurecer por empilhamento), faces de telhado/parede com volume (lado iluminado vs. sombreado) e oclusão de contato na base. Um acabamento estático aplica tom ambiente por bioma e uma vinheta suave, tudo embutido também no PNG exportado. É puramente visual — não altera os dados do `VillageMap` nem o determinismo.
+No Windows, dê dois cliques em `INICIAR.cmd`. Para iniciar manualmente, abra o PowerShell nesta pasta e execute:
 
-## Como executar
+```powershell
+npm start
+```
 
-No Windows, dê duplo clique em `INICIAR.cmd`. O servidor será iniciado minimizado e o navegador abrirá em `http://127.0.0.1:4173`. Como alternativa, abra um terminal nesta pasta, execute `node server.mjs` e visite o mesmo endereço. Use `Ctrl+C` no terminal para encerrar o servidor.
+Depois acesse `http://127.0.0.1:4173`. A aplicação funciona offline; nenhum CDN, fonte remota ou chamada de rede é necessário.
 
-Os testes podem ser executados com `npm.cmd test`. O sufixo `.cmd` é necessário neste computador porque a política do PowerShell bloqueia o script `npm.ps1`. A checagem rápida de sintaxe usa `npm.cmd run check`.
+Os comandos de verificação são:
+
+```powershell
+npm test
+npm run check
+```
 
 ## Arquitetura
 
-`src/core` contém o PRNG, ruído, pathfinding, geração e validação sem qualquer acesso ao navegador. `src/render/renderer.js` consome o mapa sem modificá-lo, cria uma camada estática do mundo e controla câmera e exportação. `src/app.js` conecta formulário, métricas, atalhos e downloads. `server.mjs` serve somente arquivos dentro do diretório do projeto e aceita apenas GET e HEAD.
+`src/core` é determinístico e independente do DOM. Sua API pública principal é `generateVillage(seed, settings)`, que devolve um `VillageMap` serializável. `random.js` contém o PRNG e hashes estáveis; `pathfinding.js` resolve rotas ponderadas; `generator.js` constrói terreno, vias, lotes, edifícios e props; `validation.js` verifica limites, colisões, água, portas e conectividade.
 
-O contrato principal é `generateVillage(seed, settings) -> VillageMap`. O resultado é serializável e inclui terreno, elevação, umidade, praça, estradas, edifícios, decorações, estatísticas e validação. Isso permite adicionar exportação JSON ou importar as vilas em uma engine futura sem reescrever o gerador.
+`src/render/renderer.js` recebe somente o modelo serializável. A projeção padrão usa tiles 32×16 e degraus verticais de 6 pixels. O mapa completo é pré-renderizado em um canvas interno com faces de terreno, água, estradas, pontes, volumes, sombras e depth sort. A câmera visível faz apenas composição, pan e zoom, mantendo a navegação leve. A exportação PNG renderiza o mapa inteiro, independentemente do enquadramento da câmera.
 
-## Arte e licença
+`src/app.js` conecta formulário, geração, câmera, métricas e download. `server.mjs` é um servidor local restrito a GET/HEAD, implementado apenas com módulos nativos do Node. Os testes usam `node:test`, sem bibliotecas externas.
 
-As folhas `assets/tiles/ninja-village.png` e `assets/tiles/ninja-floor.png` vêm do pacote Ninja Adventure de Pixel-Boy, distribuído sob CC0 1.0. Os créditos e a fonte oficial estão registrados em `assets/CREDITS.md`. Elementos ausentes são desenhados por código e funcionam como fallback se a imagem não carregar.
+## Contrato do mapa
 
-## Verificação e próximos passos
+O modelo contém `schemaVersion`, `seed`, `settings`, `width`, `height`, `waterLine`, `terrain`, `heightLevel`, `plaza`, `roads`, `buildings`, `props`, `stats` e `validation`. Ele não armazena os campos contínuos intermediários de elevação e umidade. `terrain` e `heightLevel` são vetores lineares indexados por `y * width + x`.
 
-A suíte cobre determinismo, seeds vazias, Unicode e longas, estrutura do terreno, quantidade de casas, detecção de mapas adulterados, 300 seeds válidas consecutivas e geração abaixo de 500 ms. A próxima evolução recomendada é exportar o `VillageMap` em JSON e adicionar um personagem caminhável com colisão. Depois disso, interiores, NPCs e biomas sazonais podem ser implementados sem alterar o contrato principal.
+As configurações normalizadas são `mapSize`, `biome`, `water`, `rivers`, `layout` e `settlement`. Os valores padrão são mapa 96, campo temperado, água 0.35, sem rio forçado, traçado orgânico e vila. A mesma seed com as mesmas configurações produz a mesma estrutura.
+
+## Direção de arte
+
+Terreno, transições, construções, estradas, pontes, luz e sombras são desenhados proceduralmente no Canvas. Os objetos especiais em `assets/props` foram criados especificamente para este projeto com geração de imagem e pós-processamento local para transparência e escala consistente. Nenhum asset do pacote Ninja Adventure ou de outra biblioteca externa faz parte da versão atual.
+
+O renderizador possui desenhos procedurais de contingência para um arquivo de prop ausente, mas os assets distribuídos localmente são o caminho visual normal. A documentação detalhada dessas imagens fica em `assets/ART.md`.
+
+## Validação e desempenho
+
+O validador rejeita edifícios fora do mapa, sobrepostos ou sobre água, portas inválidas, vias fora dos limites e portas sem conexão navegável com a praça. A geração tenta novamente apenas a etapa de implantação usando sub-seeds estáveis quando necessário. A faixa-alvo é de 10–18 casas para povoado, 25–40 para vila e 55–85 para cidade.
+
+Os 17 testes automatizados cobrem determinismo por hash, seeds vazias e longas, faixas de edifícios, serialização, limites, água, colisão, acesso à praça, landmarks, matrizes de centenas de configurações, projeção, bounds de renderização e servidor local. A bateria padrão percorre 300 seeds, e uma auditoria adicional percorreu 480 combinações extremas de bioma, traçado, assentamento, água e rios. Na verificação final, três vilas padrão foram geradas entre 98 e 154 ms, abaixo da meta de 500 ms da máquina de desenvolvimento.
+
+## Próximas evoluções sugeridas
+
+O modelo já permite adicionar exportação JSON sem acoplar o núcleo à interface. A evolução natural para jogo é criar uma malha navegável derivada de terreno, vias, portas e pontes, introduzir um personagem com colisão e usar os IDs estáveis de edifícios como pontos de interação. Interiores podem ser mapas separados derivados de uma sub-seed do edifício, evitando aumentar o peso do mapa externo.
+
+Outras evoluções úteis são chunks para mapas maiores que 128, clima animado por bioma, ciclos de luz, editor manual de lotes, conjuntos adicionais de telhados e fachadas, população simulada e persistência de alterações do jogador. Essas extensões devem consumir o `VillageMap` atual em vez de inserir estado de jogo no gerador.

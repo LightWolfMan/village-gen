@@ -6,23 +6,24 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number.parseInt(process.env.PORT ?? '4173', 10);
 const host = process.env.HOST ?? '127.0.0.1';
-const types = new Map([
+const contentTypes = new Map([
   ['.html', 'text/html; charset=utf-8'],
   ['.css', 'text/css; charset=utf-8'],
   ['.js', 'text/javascript; charset=utf-8'],
   ['.json', 'application/json; charset=utf-8'],
   ['.png', 'image/png'],
   ['.svg', 'image/svg+xml'],
-  ['.txt', 'text/plain; charset=utf-8']
+  ['.md', 'text/markdown; charset=utf-8']
 ]);
 
-function safePath(urlPath) {
+function resolveRequestPath(url = '/') {
   let pathname;
   try {
-    pathname = decodeURIComponent(urlPath.split('?')[0]);
+    pathname = decodeURIComponent(url.split('?')[0]);
   } catch {
     return undefined;
   }
+
   const target = resolve(root, `.${pathname === '/' ? '/index.html' : pathname}`);
   const relation = relative(root, target);
   return relation && !relation.startsWith('..') && !isAbsolute(relation) ? target : null;
@@ -35,14 +36,14 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  const target = safePath(request.url ?? '/');
+  const target = resolveRequestPath(request.url);
   if (target === undefined) {
     response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
     response.end('URL inválida');
     return;
   }
   if (!target) {
-    response.writeHead(403);
+    response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
     response.end('Acesso negado');
     return;
   }
@@ -52,7 +53,7 @@ const server = createServer(async (request, response) => {
     if (!info.isFile()) throw new Error('Not a file');
     const body = request.method === 'HEAD' ? undefined : await readFile(target);
     response.writeHead(200, {
-      'Content-Type': types.get(extname(target).toLowerCase()) ?? 'application/octet-stream',
+      'Content-Type': contentTypes.get(extname(target).toLowerCase()) ?? 'application/octet-stream',
       'Cache-Control': 'no-cache',
       'X-Content-Type-Options': 'nosniff',
       'Cross-Origin-Resource-Policy': 'same-origin'
