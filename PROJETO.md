@@ -18,6 +18,8 @@ npm start
 
 Depois acesse `http://127.0.0.1:4173`. A aplicação funciona offline; nenhum CDN, fonte remota ou chamada de rede é necessário.
 
+Para comparar o resultado visual antes e depois de uma mudança, `tools/visual/render.mjs` roda o mesmo renderer da página fora do navegador e grava PNGs em disco, com os sprites Blender carregados. É a única parte do projeto com dependência de desenvolvimento, e ela fica isolada ali: a aplicação, o servidor e os testes continuam sem instalar nada. Use `npm install` uma vez e depois `npm run visual`.
+
 Os comandos de verificação são:
 
 ```powershell

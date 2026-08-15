@@ -9,9 +9,14 @@
     "check": "node --check server.mjs && node --check src/app.js && node --check src/core/index.js && node --check src/render/renderer.js",
     "art:buildings": "pwsh -NoProfile -File tools/blender/render-temperate.ps1",
     "art:environment": "pwsh -NoProfile -File tools/blender/render-environment.ps1",
-    "art:all": "pwsh -NoProfile -File tools/blender/render-all.ps1"
+    "art:all": "pwsh -NoProfile -File tools/blender/render-all.ps1",
+    "visual": "node tools/visual/render.mjs"
   },
   "engines": {
     "node": ">=20"
+  },
+  "comentario": "A aplicação, o servidor e os testes não têm dependência alguma. O bloco abaixo serve apenas ao render headless de tools/visual, que é opcional.",
+  "devDependencies": {
+    "@napi-rs/canvas": "^1.0.5"
   }
 }

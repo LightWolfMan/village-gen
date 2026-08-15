@@ -164,9 +164,12 @@ Não há pacotes de runtime para instalar. Os comandos principais são:
 | `npm start` | Inicia o servidor local na porta 4173 |
 | `npm test` | Executa toda a suíte automatizada |
 | `npm run check` | Verifica a sintaxe dos módulos principais |
+| `npm run visual` | Renderiza mapas em PNG fora do navegador |
 | `npm run art:buildings` | Regenera edifícios temperados no Windows |
 | `npm run art:environment` | Regenera vias, pontes e props no Windows |
 | `npm run art:all` | Regenera todo o conjunto Blender no Windows |
+
+Só o `npm run visual` pede `npm install` antes, porque usa um Canvas de linha de comando. Jogar, gerar mapas e rodar os testes continua sem instalar nada.
 
 Os testes verificam determinismo, limites do mapa, colisões, água, portas, acesso à praça, lotes, fachadas, zoneamento, topologia das vias, pontes, manifestos, transparência dos PNGs, paleta de terreno de cada bioma, exportação e servidor local.
 
@@ -180,6 +183,29 @@ npm run art:all
 ```
 
 Os scripts geram modelos e PNGs de forma reproduzível. No macOS e Linux, os arquivos Python dentro de `tools/blender` podem ser executados diretamente pelo Blender em modo background; os atalhos `npm run art:*` usam PowerShell e foram preparados principalmente para Windows.
+
+</details>
+
+<details>
+<summary><strong>🖼️ Como comparar o visual antes e depois de uma mudança</strong></summary>
+
+`tools/visual/render.mjs` roda o mesmo renderer da página fora do navegador e grava PNGs em disco, com os sprites Blender de verdade. Serve para ver o efeito de uma mudança sem depender do olho no navegador:
+
+```powershell
+npm install
+npm run visual
+```
+
+O comando sem argumentos grava sete vistas em `shots/`: uma por bioma, os dois traçados, um povoado e o overlay de zonas. Guarde essa pasta antes de mexer no visual, repita depois e compare imagem a imagem.
+
+Para um caso específico:
+
+```powershell
+npm run visual -- --seed "Aurora do Norte" --biome arid --settlement town --rivers
+npm run visual -- --seed minha-seed --crop 1380,600,1000,620
+```
+
+Aceita `--seed`, `--biome`, `--settlement`, `--layout`, `--size`, `--water`, `--rivers`, `--zones`, `--out`, `--width` e `--crop`. Foi essa ferramenta que revelou que nove tipos de terreno caíam num fallback silencioso para grama e que a sombra dos edifícios existia mas era repintada pelo terreno.
 
 Consulte [`assets/ART.md`](assets/ART.md), [`assets/buildings/ART.md`](assets/buildings/ART.md) e [`assets/environment/ART.md`](assets/environment/ART.md) antes de alterar o pipeline visual.
 

@@ -5,3 +5,4 @@ tools/blender/*.blend1
 
 .claude/
 tools/blender/__pycache__/
+node_modules/
