@@ -42,6 +42,8 @@ def project(scene, camera, point):
 def extra_palette(mats):
     mats.update({
         "packed_earth": village.material("Packed road earth", (0.33, 0.22, 0.12, 1)),
+        "earth_light": village.material("Dry earth", (0.42, 0.30, 0.17, 1)),
+        "rut": village.material("Cart rut", (0.28, 0.19, 0.10, 1)),
         "road_edge": village.material("Road edge", (0.21, 0.15, 0.09, 1)),
         "cobble": village.material("Road cobble", (0.39, 0.37, 0.31, 1)),
         "cobble_light": village.material("Light cobble", (0.55, 0.51, 0.41, 1)),
@@ -62,24 +64,42 @@ def extra_palette(mats):
 
 
 def stone(name, x, y, z, scale, value, rotation=0):
-    obj = village.box(name, (0.20 * scale, 0.13 * scale, 0.055 * scale), (x, y, z), value, 0.018)
+    # Espessura e chanfro fixos: quando escalavam junto com o tamanho, cada peca
+    # virava um seixo arredondado e a via inteira lia como brita solta.
+    obj = village.box(name, (0.20 * scale, 0.13 * scale, 0.030), (x, y, z), value, 0.008)
     obj.rotation_euler.z = rotation
     return obj
 
 
 def build_road(kind, mats):
     surface = mats["packed_earth"] if kind == "street" else mats["cobble"] if kind == "main" else mats["plaza"]
-    village.box(f"Road-{kind}", (1.02, 1.02, 0.07), (0, 0, 0.035), surface, 0.055)
+    # Chanfro quase nulo e laje levemente maior que o tile: o chanfro de 0.055
+    # desenhava um anel escuro em volta de cada losango, e era ele que fazia
+    # tiles vizinhos lerem como pecas soltas em vez de uma via continua.
+    village.box(f"Road-{kind}", (1.04, 1.04, 0.07), (0, 0, 0.035), surface, 0.004)
     if kind == "street":
+        # Sulcos compridos o bastante para cruzar a emenda, mas discretos: existe
+        # um unico sprite de rua para os dois eixos, entao um sulco marcado vira
+        # "dormente de trilho" nas ruas transversais.
         for x in (-0.22, 0.22):
-            village.box("CartRut", (0.09, 1.0, 0.018), (x, 0, 0.079), mats["road_edge"], 0.01)
-        for index, (x, y) in enumerate(((-.34, -.31), (.31, -.18), (-.12, .28), (.38, .36), (.04, -.42))):
-            stone(f"StreetStone{index}", x, y, 0.087, 0.75, mats["cobble_light"], index * .37)
-    else:
-        positions = [(-.35,-.34),(-.08,-.36),(.23,-.34),(.40,-.12),(.12,-.10),(-.18,-.08),(-.42,.12),(-.12,.15),(.19,.17),(.40,.38),(.08,.40),(-.25,.38)]
+            village.box("CartRut", (0.09, 1.10, 0.008), (x, 0, 0.073), mats["rut"], 0.003)
+        for index, (x, y) in enumerate(((-.34, -.31), (.31, -.18), (.04, .38))):
+            stone(f"StreetStone{index}", x, y, 0.078, 0.50, mats["earth_light"], index * .37)
+    elif kind == "plaza":
+        # Lajota grande alinhada: o passo divide 1.0, entao as juntas de tiles
+        # vizinhos coincidem e o piso atravessa a emenda.
+        positions = [(col * .5 - .75, row / 3) for row in range(-2, 3) for col in range(4)]
         for index, (x, y) in enumerate(positions):
-            value = mats["cobble_light"] if (index + (1 if kind == "plaza" else 0)) % 3 == 0 else mats["road_edge"]
-            stone(f"Paver{index}", x, y, 0.087, 0.92 if kind == "plaza" else 0.78, value, index * .29)
+            value = mats["light_stone"] if index % 3 == 0 else mats["warm_stone"] if index % 3 == 1 else mats["plaza"]
+            stone(f"Flag{index}", x, y, 0.078, 2.40, value, 0)
+    else:
+        # Calcamento em fiada corrida, com pedra sobre pedra em vez de brita
+        # escura sobre terra: os tres materiais sao vizinhos de valor.
+        positions = [(col * .25 - .625 + (.125 if row % 2 else 0), row / 6 - .41667)
+                     for row in range(-1, 7) for col in range(6)]
+        for index, (x, y) in enumerate(positions):
+            value = mats["cobble_light"] if index % 4 == 0 else mats["fieldstone"] if index % 4 == 2 else mats["cobble"]
+            stone(f"Paver{index}", x, y, 0.078, 1.15, value, index * .012)
 
 
 def build_bridge(axis, role, mats):

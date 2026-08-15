@@ -13,24 +13,48 @@ export const ISO_DEFAULTS = Object.freeze({
   padding: 64,
 });
 
+/**
+ * Uma entrada por tipo de terreno que o gerador realmente emite naquele bioma.
+ * Manter em sincronia com BIOMES em src/core/generator.js: os testes de contrato
+ * falham tanto para um tipo sem cor quanto para uma cor que ninguem usa.
+ */
 const TERRAIN = Object.freeze({
-  temperate: {
-    grass: ['#71944d', '#7b9d54'], forest: ['#4e7242', '#587b47'], dirt: ['#8d7454', '#987f5c'],
-    sand: ['#d9bd7b', '#e2c887'], water: ['#4b9bb1', '#55a8bd'], marsh: ['#597447', '#647e4d'], snow: ['#e7ecea', '#f2f4ef'],
-  },
-  arid: {
-    grass: ['#9ca74d', '#aab256'], forest: ['#707c3f', '#7c8746'], dirt: ['#9b7048', '#aa7c50'],
-    sand: ['#d4ad63', '#e2bd71'], water: ['#398da5', '#49a0b5'], marsh: ['#647446', '#72814d'], snow: ['#ece9dd', '#f4f0e3'],
-  },
-  snowy: {
-    grass: ['#cad7ce', '#d7e0d9'], forest: ['#607a69', '#6d8874'], dirt: ['#7f7469', '#8b8075'],
-    sand: ['#d3ccb8', '#e0d9c6'], water: ['#5899ad', '#69aabd'], marsh: ['#778a77', '#849682'], snow: ['#e7eef1', '#f4f7f7'],
-  },
-  wetland: {
-    grass: ['#667f48', '#718b50'], forest: ['#405f3d', '#4b6b44'], dirt: ['#725f48', '#806b50'],
-    sand: ['#b7a572', '#c2b07b'], water: ['#467f87', '#528e94'], marsh: ['#4f6c48', '#5b7750'], snow: ['#dfe8e3', '#eaf0eb'],
-  },
+  temperate: Object.freeze({
+    grass: '#71944d', forest: '#47693d', sand: '#dcc083', rock: '#7e7a68', water: '#4a8b9c',
+  }),
+  arid: Object.freeze({
+    'dry-grass': '#b0a35d', scrub: '#778246', sand: '#d9b568', rock: '#a87c56', water: '#3d8698',
+  }),
+  snowy: Object.freeze({
+    snow: '#eef3f4', ice: '#c7dbe0', 'pine-forest': '#44675b', 'snow-rock': '#8f979c', water: '#4e8ba0',
+  }),
+  wetland: Object.freeze({
+    'wet-grass': '#5f7d48', marsh: '#6e7749', 'swamp-forest': '#334f38', rock: '#6f7165', water: '#436f78',
+  }),
 });
+
+/**
+ * Variacao por tile. Estreita de proposito: precisa quebrar a chapa lisa sem
+ * virar um mosaico manchado, sobretudo nas grandes areas de agua.
+ */
+const TERRAIN_TONES = Object.freeze([-6, -2, 2, 6]);
+// A agua e uma superficie continua e denuncia qualquer mosaico; a pedra ao
+// contrario ganha em parecer malhada.
+const TONE_OVERRIDES = Object.freeze({
+  water: Object.freeze([-3, 0, 2, 4]),
+  rock: Object.freeze([-11, -4, 3, 10]),
+  'snow-rock': Object.freeze([-9, -3, 3, 8]),
+});
+
+/** Tipo usado quando um terreno desconhecido aparece: o solo dominante do bioma. */
+const TERRAIN_FALLBACK = Object.freeze({
+  temperate: 'grass', arid: 'dry-grass', snowy: 'snow', wetland: 'wet-grass',
+});
+
+const reportedTerrainTypes = new Set();
+
+/** Exportados para o teste de contrato que cruza BIOMES com as cores disponiveis. */
+export { TERRAIN as TERRAIN_PALETTES, TERRAIN_FALLBACK };
 
 const MATERIALS = Object.freeze({
   thatch: { wall: '#c9ad77', lit: '#ddc58d', shade: '#a98c5e', trim: '#67472b', roof: '#b18738', roofLit: '#d0aa4d', roofDark: '#765527' },
@@ -344,6 +368,15 @@ function levelAt(map, x, y) {
   return map.terrain?.[y * map.width + x] === 'water' ? 0 : 1;
 }
 
+/** Degraus de espessura desenhados sob a borda do mundo, para o mapa nao flutuar. */
+const WORLD_SKIRT = 3;
+
+/** Como levelAt, mas fora do mapa devolve um nivel negativo: e o que da a saia. */
+function edgeLevelAt(map, x, y) {
+  if (x < 0 || y < 0 || x >= map.width || y >= map.height) return -WORLD_SKIRT;
+  return levelAt(map, x, y);
+}
+
 function biomeOf(map) {
   return map.settings?.biome ?? map.biome ?? 'temperate';
 }
@@ -474,6 +507,38 @@ export function computeRenderBounds(map, options = {}) {
   });
 }
 
+/**
+ * Retangulo, em pixels do canvas do mundo, que contem o assentamento de fato:
+ * edificios e vias. O enquadramento inicial usava o mapa inteiro, entao um mapa
+ * com muita agua abria com mais da metade da tela em oceano vazio.
+ */
+export function computeBuiltBounds(map, options = {}) {
+  const metrics = options.originX === undefined ? computeRenderBounds(map, options) : options;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let found = false;
+  const include = (point, lift = 0) => {
+    const x = point.x + metrics.originX;
+    const y = point.y + metrics.originY;
+    minX = Math.min(minX, x - metrics.tileWidth / 2);
+    maxX = Math.max(maxX, x + metrics.tileWidth / 2);
+    minY = Math.min(minY, y - lift - metrics.tileHeight);
+    maxY = Math.max(maxY, y + metrics.tileHeight);
+    found = true;
+  };
+  for (const building of map.buildings ?? []) {
+    const footprint = buildingFootprint(building);
+    const level = finite(building.baseLevel, levelAt(map, building.x, building.y));
+    const lift = buildingPixels(building, metrics).total;
+    include(projectPoint(building.x - .5, building.y - .5, level, metrics), lift);
+    include(projectPoint(building.x + footprint.width - .5, building.y + footprint.height - .5, level, metrics));
+  }
+  for (const road of map.roads ?? []) {
+    include(projectPoint(road.x, road.y, levelAt(map, road.x, road.y), metrics));
+  }
+  if (!found) return null;
+  return Object.freeze({ minX, minY, maxX, maxY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) });
+}
+
 function makeCanvas(width, height, supplied) {
   const canvas = supplied ?? (typeof OffscreenCanvas !== 'undefined'
     ? new OffscreenCanvas(width, height)
@@ -537,20 +602,37 @@ function diamondAt(x, y, level, state, inset = 0, lift = 0) {
   };
 }
 
-function terrainColors(map, type, x, y) {
-  const palette = TERRAIN[biomeOf(map)] ?? TERRAIN.temperate;
-  const colors = palette[type] ?? palette.grass;
-  const top = colors[hash2(x, y, 17) % colors.length];
-  return { top, east: tint(top, -34), south: tint(top, -49) };
+function terrainColors(map, type, x, y, level = 1) {
+  const biome = biomeOf(map);
+  const palette = TERRAIN[biome] ?? TERRAIN.temperate;
+  let base = palette[type];
+  if (!base) {
+    // Um tipo sem cor costumava virar grama em silencio, e foi assim que o
+    // sertao arido passou a renderizar como campo verde. Agora ele avisa.
+    const key = `${biome}:${type}`;
+    if (!reportedTerrainTypes.has(key)) {
+      reportedTerrainTypes.add(key);
+      console.warn(`Terreno sem cor definida: ${key}. Usando o solo do bioma.`);
+    }
+    base = palette[TERRAIN_FALLBACK[biome] ?? 'grass'] ?? Object.values(palette)[0];
+  }
+  const isWater = type === 'water';
+  const tones = TONE_OVERRIDES[type] ?? TERRAIN_TONES;
+  // Rampa de luminancia por nivel: sem ela os seis degraus de altura ficam
+  // indistinguiveis e o mapa inteiro le como um plano. Limitada, porque sem
+  // teto ela transformava o platao de pedra do nivel 5 numa laje quase branca.
+  const relief = isWater ? 0 : clamp(Math.round((level - 3) * 8), -16, 16);
+  const top = tint(base, tones[hash2(x, y, 17) % tones.length] + relief);
+  return { top, east: tint(top, -44), south: tint(top, -64) };
 }
 
 function drawTerrainTile(ctx, map, x, y, state) {
   const level = levelAt(map, x, y);
-  const type = map.terrain?.[y * map.width + x] ?? 'grass';
+  const type = map.terrain?.[y * map.width + x] ?? TERRAIN_FALLBACK[biomeOf(map)] ?? 'grass';
   const shape = diamondAt(x, y, level, state);
-  const colors = terrainColors(map, type, x, y);
-  const xLevel = levelAt(map, x + 1, y);
-  const yLevel = levelAt(map, x, y + 1);
+  const colors = terrainColors(map, type, x, y, level);
+  const xLevel = edgeLevelAt(map, x + 1, y);
+  const yLevel = edgeLevelAt(map, x, y + 1);
 
   if (xLevel < level) {
     const drop = (level - xLevel) * state.metrics.heightStep;
@@ -571,7 +653,18 @@ function drawTerrainTile(ctx, map, x, y, state) {
     }
   }
 
-  polygon(ctx, colors.top, [shape.north, shape.east, shape.south, shape.west], tint(colors.top, -14));
+  // O contorno usa a propria cor de preenchimento: sela a costura entre losangos
+  // arredondados sem desenhar a grade de tiles por cima do mundo inteiro.
+  polygon(ctx, colors.top, [shape.north, shape.east, shape.south, shape.west], colors.top);
+  // Definicao so na fronteira entre tipos diferentes de terreno. Vizinhos de agua
+  // ficam de fora porque a espuma abaixo ja marca a margem.
+  if (type !== 'water') {
+    const eastType = x + 1 < map.width ? map.terrain?.[y * map.width + x + 1] : undefined;
+    const southType = y + 1 < map.height ? map.terrain?.[(y + 1) * map.width + x] : undefined;
+    const border = tint(colors.top, -24);
+    if (eastType && eastType !== type && eastType !== 'water') line(ctx, border, 1, [shape.east, shape.south]);
+    if (southType && southType !== type && southType !== 'water') line(ctx, border, 1, [shape.south, shape.west]);
+  }
   if (type === 'water') {
     const glint = hash2(x, y, 91) % 5;
     if (glint < 2) line(ctx, 'rgba(215,244,244,.40)', 1, [
@@ -898,21 +991,53 @@ function drawArchitectureDetails(ctx, building, shape, state, mat, profile) {
   }
 }
 
+/**
+ * Silhueta projetada da base, e nao uma tira na aresta: o desenho anterior
+ * cobria so o lado sudoeste com 4% a 11% de alpha, entao o predio parecia um
+ * adesivo colado no terreno. O contorno da base somado a copia deslocada
+ * forma o hexagono convexo que a luz do canto superior esquerdo produziria.
+ */
+// A caixa do PNG inclui folga transparente acima do telhado; so uma fracao dela
+// e volume construido de fato.
+const SPRITE_SHADOW_FACTOR = .62;
+
+/**
+ * Altura visual em pixels. Para um predio raster ela vem do sprite: usar a
+ * altura procedural (~43 px) enquanto o sprite Blender ocupa ~126 px produzia
+ * uma sombra curta demais, que terminava embaixo do proprio predio.
+ */
+function shadowHeightOf(building, state) {
+  const sprite = resolveBuildingSprite(building, biomeOf(state.map), state.buildingSprites);
+  if (sprite) {
+    try {
+      const level = finite(building.baseLevel, levelAt(state.map, building.x, building.y));
+      const placement = computeBuildingSpritePlacement(building, sprite, { ...state.metrics, level });
+      const visual = (placement.anchor.y - placement.y) * SPRITE_SHADOW_FACTOR;
+      if (visual > 0) return visual;
+    } catch {
+      // Metadados incompletos caem na estimativa procedural.
+    }
+  }
+  return buildingPixels(building, state.metrics).total;
+}
+
 function drawBuildingShadow(ctx, building, state) {
   const c = buildingCorners(building, state);
-  const vertical = buildingPixels(building, state.metrics).total;
-  const dx = vertical * .42;
-  const dy = vertical * .20;
+  const vertical = shadowHeightOf(building, state);
   ctx.save();
-  for (const layer of [1.18, 1, .76]) {
-    ctx.globalAlpha = layer > 1 ? .045 : layer === 1 ? .075 : .11;
+  for (const [reach, alpha] of [[1.15, .12], [.82, .15], [.45, .18]]) {
+    const dx = vertical * .42 * reach;
+    const dy = vertical * .20 * reach;
+    ctx.globalAlpha = alpha;
     polygon(ctx, '#101813', [
-      c.w, c.s,
-      { x: c.s.x + dx * layer, y: c.s.y + dy * layer },
-      { x: c.w.x + dx * layer, y: c.w.y + dy * layer },
+      c.n, c.e,
+      { x: c.e.x + dx, y: c.e.y + dy },
+      { x: c.s.x + dx, y: c.s.y + dy },
+      { x: c.w.x + dx, y: c.w.y + dy },
+      c.w,
     ]);
   }
-  ctx.globalAlpha = .24;
+  ctx.globalAlpha = .30;
   line(ctx, '#101511', 3, [c.w, c.s, c.e]);
   ctx.restore();
 }
@@ -1167,7 +1292,7 @@ function drawPropShadow(ctx, prop, state) {
   const center = localPoint(prop.x, prop.y, level, state);
   const metric = propMetrics(prop, state.metrics);
   ctx.save();
-  ctx.globalAlpha = .18;
+  ctx.globalAlpha = .26;
   ctx.fillStyle = '#142019';
   ctx.beginPath();
   ctx.ellipse(center.x + metric.height * .18, center.y + metric.height * .10, metric.width * .35, Math.max(3, metric.height * .08), .22, 0, Math.PI * 2);
@@ -1175,19 +1300,43 @@ function drawPropShadow(ctx, prop, state) {
   ctx.restore();
 }
 
+/**
+ * Espelhamento e escala derivados da posicao. Ha um unico PNG por especie, e
+ * sem isso um mapa exibe quarenta arvores rigorosamente identicas, o que le
+ * como ruido procedural em vez de vegetacao.
+ */
+function propVariation(prop) {
+  const noise = hash2(prop.x, prop.y, 23);
+  return {
+    flipped: (noise & 1) === 1,
+    scale: .88 + ((noise >>> 1) % 7) / 6 * .24,
+  };
+}
+
 function drawProp(ctx, prop, state) {
   const level = finite(prop.level, levelAt(state.map, prop.x, prop.y));
   const center = localPoint(prop.x, prop.y, level, state);
   const type = propAssetType(prop, biomeOf(state.map));
   const asset = ART.get(type);
+  const variation = propVariation(prop);
   if (asset) {
-    const scale = state.metrics.tileWidth / 32;
+    const scale = state.metrics.tileWidth / 32 * variation.scale;
     const width = (asset.naturalWidth || asset.width) * scale;
     const height = (asset.naturalHeight || asset.height) * scale;
-    ctx.drawImage(asset, Math.round(center.x - width / 2), Math.round(center.y - height + state.metrics.tileHeight / 2), Math.round(width), Math.round(height));
+    ctx.save();
+    ctx.translate(Math.round(center.x), Math.round(center.y + state.metrics.tileHeight / 2));
+    if (variation.flipped) ctx.scale(-1, 1);
+    ctx.drawImage(asset, Math.round(-width / 2), Math.round(-height), Math.round(width), Math.round(height));
+    ctx.restore();
     return;
   }
+  ctx.save();
+  ctx.translate(center.x, center.y);
+  if (variation.flipped) ctx.scale(-1, 1);
+  ctx.scale(variation.scale, variation.scale);
+  ctx.translate(-center.x, -center.y);
   drawProceduralProp(ctx, { ...prop, type }, center, state);
+  ctx.restore();
 }
 
 function drawProceduralProp(ctx, prop, center, state) {
@@ -1240,19 +1389,12 @@ function ambientColor(biome) {
   return { temperate: 'rgba(255,224,155,.07)', arid: 'rgba(255,195,112,.10)', snowy: 'rgba(170,210,255,.08)', wetland: 'rgba(127,187,154,.08)' }[biome] ?? 'rgba(255,224,155,.07)';
 }
 
-/** Renderiza o mapa completo, independente do enquadramento atual da camera. */
-export function renderVillageToCanvas(map, options = {}) {
-  const buildingSprites = options.buildingSprites ?? BUILDING_ART;
-  const metrics = computeRenderBounds(map, { ...options, buildingSprites });
-  const canvas = makeCanvas(metrics.width, metrics.height, options.canvas);
-  const ctx = canvas.getContext('2d', { alpha: false });
-  if (!ctx) throw new Error('Contexto Canvas 2D indisponivel.');
-  ctx.imageSmoothingEnabled = false;
-  const biome = biomeOf(map);
-  ctx.fillStyle = biome === 'snowy' ? '#d5e0df' : biome === 'arid' ? '#b9955f' : '#294737';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+const REFLECTION_REACH = 7;
+const REFLECTION_ALPHA = .3;
+const REFLECTION_SQUASH = .82;
 
-  const state = { map, metrics, showZones: options.showZones === true, buildingSprites };
+/** Indexa vias e objetos por profundidade uma unica vez para os tres passes. */
+function buildScene(map) {
   const roads = new Map((map.roads ?? []).map((road) => [`${road.x},${road.y}`, road]));
   const buildingsByDepth = new Map();
   const propsByDepth = new Map();
@@ -1266,30 +1408,171 @@ export function renderVillageToCanvas(map, options = {}) {
     if (!propsByDepth.has(depth)) propsByDepth.set(depth, []);
     propsByDepth.get(depth).push(prop);
   }
+  return { roads, buildingsByDepth, propsByDepth, maxDepth: map.width + map.height + 8 };
+}
 
-  const maxDepth = map.width + map.height + 8;
-  for (let depth = 0; depth <= maxDepth; depth += 1) {
+/**
+ * Passe A: o chao inteiro. Separar o chao dos objetos e o que torna possivel
+ * pousar sombra e reflexo sobre ele; no loop unico anterior a sombra caia em
+ * tiles que ainda seriam pintados e desaparecia.
+ */
+function drawGroundPass(ctx, map, state, scene) {
+  for (let depth = 0; depth <= scene.maxDepth; depth += 1) {
     const xStart = Math.max(0, depth - (map.height - 1));
     const xEnd = Math.min(map.width - 1, depth);
     for (let x = xStart; x <= xEnd; x += 1) {
       const y = depth - x;
       drawTerrainTile(ctx, map, x, y, state);
       if (state.showZones) drawZoneTile(ctx, map, x, y, state);
-      const road = roads.get(`${x},${y}`);
+      const road = scene.roads.get(`${x},${y}`);
       if (road) drawRoad(ctx, road, map, state);
       else if (isPlazaTile(map.plaza, x, y)) drawPlazaTile(ctx, x, y, levelAt(map, x, y), state);
     }
-    for (const building of buildingsByDepth.get(depth) ?? []) drawBuildingShadow(ctx, building, state);
-    for (const prop of propsByDepth.get(depth) ?? []) drawPropShadow(ctx, prop, state);
+  }
+}
+
+/** Passe C: edificios e props, em ordem de profundidade. */
+function drawObjectPass(ctx, state, scene) {
+  for (let depth = 0; depth <= scene.maxDepth; depth += 1) {
     const objects = [
-      ...(buildingsByDepth.get(depth) ?? []).map((value) => ({ kind: 'building', value })),
-      ...(propsByDepth.get(depth) ?? []).map((value) => ({ kind: 'prop', value })),
+      ...(scene.buildingsByDepth.get(depth) ?? []).map((value) => ({ kind: 'building', value })),
+      ...(scene.propsByDepth.get(depth) ?? []).map((value) => ({ kind: 'prop', value })),
     ].sort((a, b) => (a.value.x - b.value.x) || (a.kind === 'building' ? -1 : 1));
     for (const object of objects) {
       if (object.kind === 'building') drawBuilding(ctx, object.value, state);
       else drawProp(ctx, object.value, state);
     }
   }
+}
+
+function makeOffscreenCanvas(width, height) {
+  try {
+    if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
+    if (typeof document !== 'undefined') {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      return canvas;
+    }
+  } catch {
+    // Sem canvas auxiliar o reflexo apenas nao acontece; o resto do mapa segue.
+  }
+  return null;
+}
+
+/**
+ * Junta, numa unica varredura, quem reflete e quais tiles de agua servem de
+ * mascara. Percorrer so a vizinhanca dos objetos evita varrer o mapa inteiro:
+ * num pantano sao milhares de tiles de agua, e quase nenhum recebe reflexo.
+ */
+function collectReflectors(map) {
+  const reflectors = [];
+  const waterTiles = new Set();
+  const consider = (item, kind) => {
+    const cx = Math.round(finite(item.x, 0));
+    const cy = Math.round(finite(item.y, 0));
+    let touchesWater = false;
+    for (let dy = -REFLECTION_REACH; dy <= REFLECTION_REACH; dy += 1) {
+      for (let dx = -REFLECTION_REACH; dx <= REFLECTION_REACH; dx += 1) {
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
+        const index = ny * map.width + nx;
+        if (map.terrain?.[index] !== 'water') continue;
+        waterTiles.add(index);
+        touchesWater = true;
+      }
+    }
+    if (touchesWater) reflectors.push({ item, kind });
+  };
+  for (const building of map.buildings ?? []) consider(building, 'building');
+  for (const prop of map.props ?? []) consider(prop, 'prop');
+  return { reflectors, waterTiles };
+}
+
+/** Espelha o desenho em torno da linha de base do objeto, com leve achatamento. */
+function mirrored(ctx, baseY, draw) {
+  ctx.save();
+  ctx.translate(0, baseY * (1 + REFLECTION_SQUASH));
+  ctx.scale(1, -REFLECTION_SQUASH);
+  draw();
+  ctx.restore();
+}
+
+/**
+ * Reflexo na agua. Os objetos proximos da margem sao redesenhados espelhados
+ * numa camada propria, recortada pela superficie de agua, e so entao composta
+ * de uma vez — compor a camada inteira evita que as faces de um mesmo predio
+ * se somem em alpha e virem uma mancha.
+ */
+function drawReflections(ctx, map, state) {
+  const { reflectors, waterTiles } = collectReflectors(map);
+  if (!reflectors.length || !waterTiles.size) return false;
+  const layer = makeOffscreenCanvas(state.metrics.width, state.metrics.height);
+  const layerCtx = layer?.getContext('2d');
+  if (!layerCtx) return false;
+  layerCtx.imageSmoothingEnabled = false;
+  for (const { item, kind } of reflectors) {
+    if (kind === 'building') {
+      mirrored(layerCtx, buildingCorners(item, state).s.y, () => drawBuilding(layerCtx, item, state));
+    } else {
+      const level = finite(item.level, levelAt(map, item.x, item.y));
+      mirrored(layerCtx, localPoint(item.x, item.y, level, state).y, () => drawProp(layerCtx, item, state));
+    }
+  }
+  // Recorte por composicao, e nao por clip: um clip com milhares de sub-caminhos
+  // custava segundos por mapa. Todos os losangos entram num unico caminho e
+  // sofrem um unico fill — aplicar destination-in losango a losango faria
+  // intersecao sucessiva, sobrando apenas o ultimo.
+  layerCtx.globalCompositeOperation = 'destination-in';
+  layerCtx.beginPath();
+  for (const index of waterTiles) {
+    const shape = diamondAt(index % map.width, Math.floor(index / map.width), 0, state);
+    layerCtx.moveTo(shape.north.x, shape.north.y);
+    layerCtx.lineTo(shape.east.x, shape.east.y);
+    layerCtx.lineTo(shape.south.x, shape.south.y);
+    layerCtx.lineTo(shape.west.x, shape.west.y);
+    layerCtx.closePath();
+  }
+  layerCtx.fillStyle = '#ffffff';
+  layerCtx.fill();
+  layerCtx.globalCompositeOperation = 'source-over';
+  ctx.save();
+  ctx.globalAlpha = REFLECTION_ALPHA;
+  ctx.drawImage(layer, 0, 0);
+  ctx.restore();
+  return true;
+}
+
+/** Passe B: decalques de chao — reflexo na agua e sombras projetadas. */
+function drawDecalPass(ctx, map, state, scene, options) {
+  if (options.reflections !== false) drawReflections(ctx, map, state);
+  for (const list of scene.buildingsByDepth.values()) {
+    for (const building of list) drawBuildingShadow(ctx, building, state);
+  }
+  for (const list of scene.propsByDepth.values()) {
+    for (const prop of list) drawPropShadow(ctx, prop, state);
+  }
+}
+
+/** Renderiza o mapa completo, independente do enquadramento atual da camera. */
+export function renderVillageToCanvas(map, options = {}) {
+  const buildingSprites = options.buildingSprites ?? BUILDING_ART;
+  const metrics = computeRenderBounds(map, { ...options, buildingSprites });
+  const canvas = makeCanvas(metrics.width, metrics.height, options.canvas);
+  const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) throw new Error('Contexto Canvas 2D indisponivel.');
+  ctx.imageSmoothingEnabled = false;
+  const biome = biomeOf(map);
+  ctx.fillStyle = biome === 'snowy' ? '#d5e0df' : biome === 'arid' ? '#b9955f' : '#294737';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const state = { map, metrics, showZones: options.showZones === true, buildingSprites };
+  const scene = buildScene(map);
+
+  drawGroundPass(ctx, map, state, scene);
+  drawDecalPass(ctx, map, state, scene, options);
+  drawObjectPass(ctx, state, scene);
 
   ctx.save();
   ctx.globalCompositeOperation = 'soft-light';
@@ -1396,6 +1679,7 @@ export class VillageRenderer {
   setMap(map) {
     this.map = map;
     this.world = renderVillageToCanvas(map, { showZones: this.showZones });
+    this.builtBounds = computeBuiltBounds(map);
     this.center();
   }
 
@@ -1429,18 +1713,26 @@ export class VillageRenderer {
     const view = this.viewport();
     const worldWidth = this.world.width * this.camera.zoom;
     const worldHeight = this.world.height * this.camera.zoom;
-    const marginX = Math.min(view.width * .35, 220);
-    const marginY = Math.min(view.height * .35, 180);
+    // Folga generosa: o enquadramento inicial mira o assentamento, que em mapas
+    // costeiros fica longe do centro geometrico do mundo.
+    const marginX = Math.min(view.width * .5, 420);
+    const marginY = Math.min(view.height * .5, 340);
     this.camera.x = worldWidth <= view.width ? (view.width - worldWidth) / 2 : clamp(this.camera.x, view.width - worldWidth - marginX, marginX);
     this.camera.y = worldHeight <= view.height ? (view.height - worldHeight) / 2 : clamp(this.camera.y, view.height - worldHeight - marginY, marginY);
   }
 
-  center() {
+  /** Enquadra o assentamento; passe { whole: true } para abranger o mapa inteiro. */
+  center(options = {}) {
     if (!this.world) return;
     const view = this.viewport();
-    this.camera.zoom = clamp(Math.min((view.width - 32) / this.world.width, (view.height - 32) / this.world.height), .18, 3);
-    this.camera.x = (view.width - this.world.width * this.camera.zoom) / 2;
-    this.camera.y = (view.height - this.world.height * this.camera.zoom) / 2;
+    const target = options.whole === true ? null : this.builtBounds;
+    const width = target ? target.width : this.world.width;
+    const height = target ? target.height : this.world.height;
+    const centerX = target ? (target.minX + target.maxX) / 2 : this.world.width / 2;
+    const centerY = target ? (target.minY + target.maxY) / 2 : this.world.height / 2;
+    this.camera.zoom = clamp(Math.min((view.width - 32) / width, (view.height - 32) / height), .18, 3);
+    this.camera.x = view.width / 2 - centerX * this.camera.zoom;
+    this.camera.y = view.height / 2 - centerY * this.camera.zoom;
     this.clampCamera();
     this.notifyCamera();
     this.draw();

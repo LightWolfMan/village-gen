@@ -2,3 +2,6 @@
 tools/blender/*.blend
 tools/blender/*.blend1
 
+
+.claude/
+tools/blender/__pycache__/

@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { BIOMES, generateVillage } from '../src/core/index.js';
 import {
+  TERRAIN_FALLBACK,
+  TERRAIN_PALETTES,
   computeDoorPlacement,
   computeBuildingSpritePlacement,
   computeEnvironmentSpritePlacement,
@@ -26,7 +29,7 @@ function sampleMap() {
     biome: 'temperate',
     terrain: [
       'water', 'grass', 'grass', 'grass', 'water',
-      'grass', 'grass', 'dirt', 'grass', 'grass',
+      'grass', 'grass', 'sand', 'grass', 'grass',
       'grass', 'grass', 'grass', 'forest', 'grass',
       'water', 'grass', 'grass', 'grass', 'water',
     ],
@@ -49,6 +52,60 @@ function sampleMap() {
     ],
   };
 }
+
+// O conjunto emitido por createTerrain: solo, margem, bosque, rocha do bioma e agua.
+function expectedTerrainTypes(biomeKey) {
+  const biome = BIOMES[biomeKey];
+  return new Set([
+    'water',
+    biome.ground,
+    biome.shore,
+    biome.grove,
+    biomeKey === 'snowy' ? 'snow-rock' : 'rock',
+  ]);
+}
+
+test('todo terreno emitido por um bioma tem cor propria no renderer', () => {
+  for (const biomeKey of Object.keys(BIOMES)) {
+    const palette = TERRAIN_PALETTES[biomeKey];
+    assert.ok(palette, `bioma ${biomeKey} sem paleta`);
+    for (const type of expectedTerrainTypes(biomeKey)) {
+      assert.ok(
+        Object.hasOwn(palette, type),
+        `${biomeKey}: terreno "${type}" cairia no fallback em vez de ter cor propria`,
+      );
+    }
+  }
+});
+
+test('nenhuma paleta carrega cor que o bioma nunca emite', () => {
+  for (const biomeKey of Object.keys(BIOMES)) {
+    const expected = expectedTerrainTypes(biomeKey);
+    for (const type of Object.keys(TERRAIN_PALETTES[biomeKey])) {
+      assert.ok(expected.has(type), `${biomeKey}: cor morta para "${type}"`);
+    }
+  }
+});
+
+test('o fallback de cada bioma aponta para o solo dominante e tem cor', () => {
+  for (const biomeKey of Object.keys(BIOMES)) {
+    const fallback = TERRAIN_FALLBACK[biomeKey];
+    assert.equal(fallback, BIOMES[biomeKey].ground, `${biomeKey}: fallback fora do solo do bioma`);
+    assert.ok(TERRAIN_PALETTES[biomeKey][fallback], `${biomeKey}: fallback sem cor`);
+  }
+});
+
+test('mapas reais nao emitem terreno fora do conjunto declarado', () => {
+  for (const biomeKey of Object.keys(BIOMES)) {
+    const expected = expectedTerrainTypes(biomeKey);
+    for (const water of [0.15, 0.35, 0.6]) {
+      const map = generateVillage(`paleta-${biomeKey}-${water}`, { biome: biomeKey, water, settlement: 'village' });
+      for (const type of new Set(map.terrain)) {
+        assert.ok(expected.has(type), `${biomeKey}: terreno inesperado "${type}"`);
+      }
+    }
+  }
+});
 
 test('projectPoint usa losango 32x16 e degrau vertical de 6 pixels', () => {
   assert.deepEqual(projectPoint(0, 0, 0), { x: 0, y: 0 });

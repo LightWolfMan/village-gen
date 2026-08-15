@@ -26,6 +26,20 @@ const SETTLEMENTS = Object.freeze({
   town: { houses: [55, 85], services: ["inn", "shop", "smithy", "hall", "chapel", "market", "mill", "tower"] },
 });
 
+/**
+ * Raio aproximado, em tiles, da mancha construida de um assentamento. Serve
+ * de referencia para o traçado: a malha em grade usava uma fracao fixa da
+ * largura do mapa e chegava ao dobro da area realmente ocupada, o que produzia
+ * quadras inteiras de rua deserta em volta da cidade.
+ */
+function builtRadius(settlementKey) {
+  const settlement = SETTLEMENTS[settlementKey] ?? SETTLEMENTS.village;
+  const buildings = (settlement.houses[0] + settlement.houses[1]) / 2 + settlement.services.length;
+  // ~14 tiles por edificio somando recuo lateral e frente de rua; a mancha
+  // cresce como um losango, cuja area e cerca de 2r².
+  return Math.sqrt(buildings * 14 / 2);
+}
+
 const MAP_SIZES = [72, 96, 128];
 const DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const ZONE_LABELS = Object.freeze({
@@ -100,6 +114,11 @@ function fractalNoise(seed, x, y, salt) {
     + valueNoise(seed, x, y, 7, salt + 2) * 0.17;
 }
 
+// Afloramento rochoso e cume, nao plato. Com o limiar antigo (0.79) uma seed de
+// relevo alto cobria 8% do mapa de pedra, o que so nao aparecia porque o tipo
+// caia no fallback verde do renderer.
+const ROCK_LINE = 0.83;
+
 function createTerrain(seed, settings) {
   const width = settings.mapSize;
   const height = width;
@@ -122,12 +141,40 @@ function createTerrain(seed, settings) {
         heightLevel[index] = clamp(1 + Math.floor((adjusted - waterLine) / Math.max(0.001, 1 - waterLine) * 6), 1, 6);
         if (adjusted < waterLine + 0.035) terrain[index] = biome.shore;
         else if (moisture > biome.moisture && adjusted < 0.82) terrain[index] = biome.grove;
-        else if (adjusted > 0.79) terrain[index] = settings.biome === "snowy" ? "snow-rock" : "rock";
+        else if (adjusted > ROCK_LINE) terrain[index] = settings.biome === "snowy" ? "snow-rock" : "rock";
         else terrain[index] = biome.ground;
       }
     }
   }
+  pruneOrphanShore(terrain, width, height, biome);
   return { terrain, heightLevel, waterLine };
+}
+
+const SHORE_REACH = 2;
+
+/**
+ * A margem nasce de uma faixa de elevacao, entao um plato inteiro na altura
+ * certa virava um risco reto de areia a dezenas de tiles da agua. Margem de
+ * verdade precisa ter agua por perto; o resto volta a ser solo do bioma.
+ */
+function pruneOrphanShore(terrain, width, height, biome) {
+  const orphans = [];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (terrain[y * width + x] !== biome.shore) continue;
+      let nearWater = false;
+      for (let dy = -SHORE_REACH; dy <= SHORE_REACH && !nearWater; dy += 1) {
+        for (let dx = -SHORE_REACH; dx <= SHORE_REACH; dx += 1) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          if (terrain[ny * width + nx] === "water") { nearWater = true; break; }
+        }
+      }
+      if (!nearWater) orphans.push(y * width + x);
+    }
+  }
+  for (const index of orphans) terrain[index] = biome.ground;
 }
 
 function carveRiver(seed, map, random) {
@@ -160,11 +207,47 @@ function flattenArea(map, x, y, width, height, level, terrainType) {
   }
 }
 
-function choosePlaza(map, random) {
+const PLAZA_CANDIDATES = 24;
+const PLAZA_MARGIN = 6;
+
+/** Fracao de terra seca numa moldura em volta da praca candidata. */
+function dryShareAround(map, x, y, size) {
+  let dry = 0;
+  let total = 0;
+  for (let py = y - PLAZA_MARGIN; py < y + size + PLAZA_MARGIN; py += 1) {
+    for (let px = x - PLAZA_MARGIN; px < x + size + PLAZA_MARGIN; px += 1) {
+      if (px < 1 || py < 1 || px >= map.width - 1 || py >= map.height - 1) continue;
+      total += 1;
+      if (map.terrain[py * map.width + px] !== "water") dry += 1;
+    }
+  }
+  return total ? dry / total : 0;
+}
+
+function choosePlaza(map, random, choice = 0) {
   const size = map.settings.settlement === "town" ? 7 : 5;
-  const jitter = Math.floor(map.width * 0.08);
-  const x = Math.floor(map.width / 2 - size / 2) + random.int(-jitter, jitter);
-  const y = Math.floor(map.height / 2 - size / 2) + random.int(-jitter, jitter);
+  // A cada retentativa a busca se abre: se a vizinhanca do centro nao comporta
+  // o parcelamento, insistir nela com outro sorteio nao adianta.
+  const jitter = Math.floor(map.width * 0.08 * (1 + choice * 0.7));
+  const baseX = Math.floor(map.width / 2 - size / 2);
+  const baseY = Math.floor(map.height / 2 - size / 2);
+  // Antes bastava um sorteio: num pantano a praca ia parar numa ilhota de tres
+  // por tres cercada de agua, ligada ao resto so por pontes. Agora varios
+  // candidatos deterministicos disputam pela terra seca em volta, e `choice`
+  // permite ao gerador tentar o proximo melhor quando o parcelamento nao fecha.
+  const candidates = [];
+  for (let attempt = 0; attempt < PLAZA_CANDIDATES; attempt += 1) {
+    const candidateX = clamp(baseX + random.int(-jitter, jitter), PLAZA_MARGIN, map.width - size - PLAZA_MARGIN - 1);
+    const candidateY = clamp(baseY + random.int(-jitter, jitter), PLAZA_MARGIN, map.height - size - PLAZA_MARGIN - 1);
+    candidates.push({ x: candidateX, y: candidateY, score: dryShareAround(map, candidateX, candidateY, size) });
+  }
+  // Ordenacao estavel e sem desempate por coordenada: entre candidatos de mesma
+  // pontuacao vale a ordem sorteada, senao as tentativas seguintes cairiam todas
+  // no mesmo canto e repetiriam o mesmo parcelamento impossivel.
+  candidates.sort((a, b) => b.score - a.score);
+  const chosen = candidates[Math.min(choice, candidates.length - 1)];
+  const x = chosen.x;
+  const y = chosen.y;
   const samples = [];
   for (let py = y - 2; py < y + size + 2; py += 1) {
     for (let px = x - 2; px < x + size + 2; px += 1) {
@@ -247,6 +330,9 @@ function createOrganicRoads(map, random, roadMap) {
     routeRoad(map, roadMap, center, start, cost, "street");
   }
   if (map.settings.settlement !== "hamlet") {
+    // O anel externo e a principal fonte de frente de rua reta, que e a unica
+    // superficie onde o parcelamento pode encostar um edificio. Aperta-lo
+    // adensava o desenho, mas estrangulava seeds de pouca terra firme.
     const outer = Math.floor(ringRadius * (map.settings.settlement === "town" ? 1.55 : 1.45));
     const outerAnchors = [[-outer, -outer], [outer, -outer], [outer, outer], [-outer, outer]].map(([dx, dy]) => ({
       x: clamp(center.x + dx, 2, map.width - 3), y: clamp(center.y + dy, 2, map.height - 3),
@@ -275,7 +361,10 @@ function createGridRoads(map, random, roadMap) {
   const centerX = map.plaza.x + Math.floor(map.plaza.width / 2);
   const centerY = map.plaza.y + Math.floor(map.plaza.height / 2);
   const spacing = random.int(7, 9);
-  const radius = Math.floor(map.width * (map.settings.settlement === "hamlet" ? 0.2 : 0.34));
+  // Antes era uma fracao fixa da largura do mapa (0.34), o que numa cidade dava
+  // quase o dobro da area ocupada e enchia o entorno de quadras desertas. O
+  // fator nao desce mais que isto porque a grade e a fonte de frente de rua.
+  const radius = Math.max(spacing * 2, Math.round(builtRadius(map.settings.settlement) * 1.3));
   map.gridSpec = { centerX, centerY, spacing, radius };
   addLine(map, roadMap, 1, centerY, map.width - 2, centerY, "main");
   addLine(map, roadMap, centerX, 1, centerX, map.height - 2, "main");
@@ -665,9 +754,31 @@ function terrainCounts(terrain) {
   return result;
 }
 
+const PLAZA_RETRIES = 4;
+
+/**
+ * A praca define o centro de todo o resto: vias, zonas e parcelamento saem
+ * dela. Quando o parcelamento nao fecha, tentar o proximo melhor local de
+ * praca custa uma geracao e resolve — e continua deterministico, porque a
+ * ordem dos candidatos vem da propria seed. Antes, uma seed nessa situacao
+ * simplesmente nao produzia mapa nenhum.
+ */
 export function generateVillage(seedInput = "", inputSettings = {}) {
   const seed = String(seedInput);
   const settings = normalizeSettings(inputSettings);
+  let lastError;
+  for (let plazaChoice = 0; plazaChoice < PLAZA_RETRIES; plazaChoice += 1) {
+    try {
+      return buildVillage(seed, settings, plazaChoice);
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.startsWith("Parcelamento insuficiente")) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+function buildVillage(seed, settings, plazaChoice) {
   const numericSeed = hashString(seed);
   const random = createRandom(`${seed}:v3`);
   const fields = createTerrain(numericSeed, settings);
@@ -684,7 +795,7 @@ export function generateVillage(seedInput = "", inputSettings = {}) {
     gridSpec: null,
   };
   if (settings.rivers) carveRiver(numericSeed, map, random.fork("river"));
-  map.plaza = choosePlaza(map, random.fork("plaza"));
+  map.plaza = choosePlaza(map, random.fork("plaza"), plazaChoice);
   const roadMap = new Map();
   for (let y = map.plaza.y; y < map.plaza.y + map.plaza.height; y += 1) {
     const row = [];

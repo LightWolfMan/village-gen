@@ -128,9 +128,15 @@ function allocateQuota(total, ratios) {
 
 function dimensionsFor(type, zone, random) {
   if (type !== "house") {
+    // A ultima medida de cada lista e um recuo compacto, usado so quando nenhuma
+    // das preferidas cabe. Como o placer para na primeira que encaixa, mapas que
+    // ja fechavam continuam identicos; o recuo apenas evita que uma vila inteira
+    // deixe de existir porque a hospedaria nao achou uma frente de 4x3.
     const serviceSizes = {
-      inn: [[5, 4], [4, 3]], shop: [[4, 3], [3, 3]], smithy: [[4, 3], [3, 3]], hall: [[5, 4], [4, 4]],
-      chapel: [[4, 5], [3, 4]], market: [[5, 4], [4, 3]], mill: [[4, 4], [3, 4]], tower: [[3, 3]],
+      inn: [[5, 4], [4, 3], [3, 3]], shop: [[4, 3], [3, 3], [3, 2]],
+      smithy: [[4, 3], [3, 3], [3, 2]], hall: [[5, 4], [4, 4], [4, 3]],
+      chapel: [[4, 5], [3, 4], [3, 3]], market: [[5, 4], [4, 3], [3, 3]],
+      mill: [[4, 4], [3, 4], [3, 3]], tower: [[3, 3], [2, 2]],
     };
     return serviceSizes[type] || [[3, 3]];
   }
@@ -268,19 +274,28 @@ function createUrbanPlanAttempt(map, random, options = {}) {
   }
   const orientationCounts = { north: 0, east: 0, south: 0, west: 0 };
 
+  // Frente de rua elegivel: reta, seca e fora da praca. Nada disso muda ao
+  // longo da tentativa, entao vale resolver uma vez em vez de refazer a copia
+  // do tile e a mascara de conexoes para cada programa e cada medida.
+  const slots = [];
+  for (const frontage of frontages) {
+    const segment = segmentById.get(frontage.segmentId);
+    if (!segment) continue;
+    for (const roadIndex of frontage.roadIndexes) {
+      const source = map.roads[roadIndex];
+      if (!source || source.bridge || source.kind === "plaza") continue;
+      if (roadMask(source, roadAt) !== OPPOSITE_STRAIGHT[segment.axis]) continue;
+      slots.push({ frontage, segment, road: { ...source, index: roadIndex } });
+    }
+  }
+
   for (let programIndex = 0; programIndex < programs.length; programIndex += 1) {
     const program = programs[programIndex];
     let placed = false;
     for (const [width, height] of dimensionsFor(program.type, program.zone, random.fork(`dimensions:${programIndex}`))) {
       const candidates = [];
-      for (const frontage of frontages) {
-        const segment = segmentById.get(frontage.segmentId);
-        if (!segment) continue;
-        for (const roadIndex of frontage.roadIndexes) {
-          const road = { ...map.roads[roadIndex], index: roadIndex };
-          if (!road || road.bridge || road.kind === "plaza") continue;
-          const mask = roadMask(road, roadAt);
-          if (mask !== OPPOSITE_STRAIGHT[segment.axis]) continue;
+      {
+        for (const { frontage, segment, road } of slots) {
           const candidate = candidateFromRoad(road, frontage.side, width, height);
           if (usedDoors.has(keyOf(candidate.door.x, candidate.door.y))) continue;
           if (!footprintClear(map, reserved, candidate, width, height, program.zone)) continue;
@@ -331,7 +346,14 @@ function createUrbanPlanAttempt(map, random, options = {}) {
       placed = true;
       break;
     }
-    if (!placed) throw new Error(`Parcelamento insuficiente para ${program.type}/${program.zone} (${programIndex + 1}/${programs.length}) na seed ${map.seed}`);
+    if (!placed) {
+      const error = new Error(`Parcelamento insuficiente para ${program.type}/${program.zone} (${programIndex + 1}/${programs.length}) na seed ${map.seed}`);
+      // Servicos sao colocados antes das casas e independem da meta de casas.
+      // Se um deles nao coube, baixar a meta e repetir a escada inteira nao
+      // muda nada — melhor devolver logo e deixar o gerador tentar outra praca.
+      error.serviceFailure = program.type !== "house";
+      throw error;
+    }
   }
 
   const occupiedLots = new Set();
@@ -369,8 +391,11 @@ export function createUrbanPlan(map, random, options = {}) {
   let lastError;
   const minimumHouses = Math.min(options.houseTarget, { hamlet: 10, village: 25, town: 55 }[map.settings.settlement]);
   let run = 0;
-  for (let houseTarget = options.houseTarget; houseTarget >= minimumHouses; houseTarget -= 1) {
-    for (let attempt = 0; attempt < 4; attempt += 1) {
+  // Passo de duas casas em vez de uma: a escada so e percorrida quando a
+  // tentativa falha, e descer de um em um chegava a 64 parcelamentos completos
+  // antes de desistir de uma seed dificil.
+  for (let houseTarget = options.houseTarget; houseTarget >= minimumHouses; houseTarget -= 2) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
       if (run > 0) {
       map.terrain.splice(0, map.terrain.length, ...baselineTerrain);
       map.heightLevel.splice(0, map.heightLevel.length, ...baselineHeights);
@@ -383,6 +408,7 @@ export function createUrbanPlan(map, random, options = {}) {
       } catch (error) {
         if (!(error instanceof Error) || !error.message.startsWith("Parcelamento insuficiente")) throw error;
         lastError = error;
+        if (error.serviceFailure) throw error;
       }
     }
   }

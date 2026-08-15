@@ -23,6 +23,8 @@ Gere povoados, vilas e cidades inteiras a partir de uma seed — diretamente no 
 
 O **Village Gen** cria assentamentos medievais completos em mapas isométricos. Cada seed define terreno, água, relevo, ruas, pontes, distritos, lotes, construções, plantações, árvores e objetos decorativos. A mesma seed, com as mesmas configurações, sempre produz a mesma vila.
 
+> 📌 Essa garantia vale dentro de uma mesma versão do gerador. As correções de terreno e traçado de agosto de 2026 mudaram o desenho dos mapas, então uma seed anotada antes disso continua funcionando, mas devolve um resultado diferente do de antes.
+
 A geração segue o fluxo `rua → segmento → fachada → lote → construção`. Isso faz os prédios acompanharem as vias, respeitarem áreas secas e ocuparem lotes funcionais, em vez de serem espalhados aleatoriamente pelo mapa.
 
 > 💡 O modelo interno já foi organizado para futuros conversores de mapas para **Minecraft**, jogos de construção inspirados em **SimCity** e até mapas com setores no estilo **Doom**.
@@ -39,10 +41,11 @@ A geração segue o fluxo `rua → segmento → fachada → lote → construçã
 | 🧭 Distritos | Residencial, mercantil, oficinas, cívico e rural |
 | 🌉 Pontes | Travessias retas e contínuas, ligadas a duas margens secas |
 | 🏠 Arquitetura | 112 sprites temperados, com famílias, variantes e quatro orientações |
-| 🎥 Câmera | Arraste, zoom e centralização do mapa |
+| 🎨 Terreno | Paleta própria para cada tipo de solo do bioma, relevo sombreado e vias contínuas |
+| 🎥 Câmera | Arraste, zoom e enquadramento do assentamento |
 | 🖼️ Exportação | PNG do mapa completo, independentemente da posição da câmera |
 | 📴 Uso offline | Nenhum CDN, fonte remota ou chamada de rede durante o uso |
-| 🧪 Qualidade | 44 testes automatizados, incluindo uma bateria de 300 seeds |
+| 🧪 Qualidade | 48 testes automatizados, e 660 seeds geradas sem uma única falha entre a bateria padrão e a varredura de robustez |
 
 ## 🚀 Início rápido
 
@@ -92,7 +95,7 @@ Em outras palavras: para **recriar e executar a aplicação em qualquer computad
 | Repetir um mapa | Digite ou cole a seed e pressione **Enter** |
 | Mover a câmera | Clique e arraste o mapa |
 | Aproximar ou afastar | Use a roda do mouse |
-| Voltar ao enquadramento inicial | Clique em **Centralizar** |
+| Enquadrar o assentamento | Clique em **Centralizar** |
 | Ver os distritos | Ative a visualização de zonas |
 | Salvar o mapa | Use **Exportar PNG** |
 
@@ -150,7 +153,7 @@ village-gen/
 └── package.json             # Comandos do projeto
 ```
 
-O Canvas renderiza terreno, água, profundidade, sombras e fallbacks procedurais. Os edifícios e objetos temperados são pré-renderizados no Blender, mantendo a aparência 2.5D detalhada sem exigir 3D em tempo real.
+O Canvas renderiza terreno, água, profundidade, sombras projetadas, reflexos na margem e fallbacks procedurais. Os edifícios e objetos temperados são pré-renderizados no Blender, mantendo a aparência 2.5D detalhada sem exigir 3D em tempo real.
 
 ## 🧪 Desenvolvimento e testes
 
@@ -165,7 +168,7 @@ Não há pacotes de runtime para instalar. Os comandos principais são:
 | `npm run art:environment` | Regenera vias, pontes e props no Windows |
 | `npm run art:all` | Regenera todo o conjunto Blender no Windows |
 
-Os testes verificam determinismo, limites do mapa, colisões, água, portas, acesso à praça, lotes, fachadas, zoneamento, topologia das vias, pontes, manifestos, transparência dos PNGs, exportação e servidor local.
+Os testes verificam determinismo, limites do mapa, colisões, água, portas, acesso à praça, lotes, fachadas, zoneamento, topologia das vias, pontes, manifestos, transparência dos PNGs, paleta de terreno de cada bioma, exportação e servidor local.
 
 <details>
 <summary><strong>🎨 Como regenerar os sprites Blender</strong></summary>
