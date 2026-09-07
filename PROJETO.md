@@ -2,6 +2,8 @@
 
 ## Entrega GitHub — v5.0.0-preview.1
 
+Publicação concluída e verificada: código no commit `ae60e324c6ec47646dc139c1ed670cd3ef771602`, branch `main`, e [pré-release v5.0.0-preview.1](https://github.com/LightWolfMan/village-gen/releases/tag/v5.0.0-preview.1). ZIP Windows de 103.142.431 bytes anexado; SHA-256 remoto igual ao local: `43450ff64af1bb15329b9e45459eaf33f8fc58d5316ed11d6ecc9bbc93c11f8a`. O pacote contém 193 entradas e o PCK foi conferido contra a instalação validada. Repositório público e escopo de documentação/evidências confirmados explicitamente pelo usuário antes do envio.
+
 Preparado o conjunto acumulado para `LightWolfMan/village-gen`, branch `main`, com pacote Windows completo como pré-release `v5.0.0-preview.1`. Código, modelos autorais, dependências distribuídas, licenças e evidências fazem parte do repositório; caches, backups, ferramentas da workbench e distribuição compilada ficam fora do Git. O ZIP será anexado à release, não ao histórico Git. Corrigido o ignore dos assets nativos para incluir `native/assets/ui`, necessário para reconstruir o HUD; modelos e ícone duplicados continuam sendo sincronizados pelo script. README atualizado para o estado nativo atual e instruções de extração.
 
 ## Publicação atual — construções revisadas e ícone flat — 7 de setembro de 2026
