@@ -1,4 +1,4 @@
-class MinHeap {
+export class MinHeap {
   constructor() { this.items = []; }
   push(item) {
     this.items.push(item);

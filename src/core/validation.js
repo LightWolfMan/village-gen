@@ -1,3 +1,5 @@
+import { MODEL_BY_ID } from "../../assets/models/catalog.js";
+
 const keyOf = (x, y) => `${x},${y}`;
 const HOUSE_RANGES = { hamlet: [10, 18], village: [25, 40], town: [55, 85] };
 const ZONE_TYPES = ["residential", "commercial", "craft", "civic", "agricultural"];
@@ -78,7 +80,15 @@ function validateBuildings(map, roadSet, roadByKey, errors) {
   const occupied = new Map();
   const expanded = new Map();
   const doorSet = new Set();
+  const entranceSet = new Set();
   for (const building of map.buildings) {
+    const model = MODEL_BY_ID[building.assetId];
+    const rotated = ["east", "west"].includes(building.orientation);
+    if (!model || model.biome !== map.settings.biome || model.variant !== building.variant
+      || building.width !== (rotated ? model.footprint.height : model.footprint.width)
+      || building.height !== (rotated ? model.footprint.width : model.footprint.height)) errors.push(`catálogo divergente em ${building.id}`);
+    if (!building.entrance || ![building.entrance.x, building.entrance.y, building.entrance.level].every(Number.isFinite)
+      || !Array.isArray(building.accessPath) || building.accessPath.length < 2) errors.push(`acesso 3D ausente em ${building.id}`);
     if (building.x < 0 || building.y < 0 || building.x + building.width > map.width || building.y + building.height > map.height) {
       errors.push(`edifício ${building.id} fora do mapa`);
       continue;
@@ -94,15 +104,17 @@ function validateBuildings(map, roadSet, roadByKey, errors) {
       else if (road.bridge) errors.push(`porta de ${building.id} usa uma ponte`);
       if (map.terrain[door.y * map.width + door.x] === "water") errors.push(`porta de ${building.id} está na água`);
       const sideMatches = {
-        north: door.y === building.y - 1 && door.x >= building.x && door.x < building.x + building.width,
-        south: door.y === building.y + building.height && door.x >= building.x && door.x < building.x + building.width,
-        west: door.x === building.x - 1 && door.y >= building.y && door.y < building.y + building.height,
-        east: door.x === building.x + building.width && door.y >= building.y && door.y < building.y + building.height,
+        north: door.y === building.y - 1 - (building.zone === "civic" ? 2 : 0) && door.x >= building.x && door.x < building.x + building.width,
+        south: door.y === building.y + building.height + (building.zone === "civic" ? 2 : 0) && door.x >= building.x && door.x < building.x + building.width,
+        west: door.x === building.x - 1 - (building.zone === "civic" ? 2 : 0) && door.y >= building.y && door.y < building.y + building.height,
+        east: door.x === building.x + building.width + (building.zone === "civic" ? 2 : 0) && door.y >= building.y && door.y < building.y + building.height,
       };
       if (!sideMatches[building.orientation] || Object.values(sideMatches).filter(Boolean).length !== 1) errors.push(`porta de ${building.id} não corresponde à orientação`);
       const visible = building.orientation === "south" || building.orientation === "east";
       if (building.entranceVisible !== visible) errors.push(`visibilidade da entrada incorreta em ${building.id}`);
-      if (doorSet.has(doorKey)) errors.push(`porta compartilhada em ${doorKey}`);
+      const entranceKey = `${building.entrance?.x}:${building.entrance?.y}`;
+      if (entranceSet.has(entranceKey)) errors.push(`entrada física compartilhada em ${entranceKey}`);
+      entranceSet.add(entranceKey);
       doorSet.add(doorKey);
     }
     if (!TYPE_ZONES[building.type]?.includes(building.zone)) errors.push(`zona inadequada em ${building.id}: ${building.zone}`);
@@ -127,13 +139,46 @@ function validateBuildings(map, roadSet, roadByKey, errors) {
     for (let y = building.y - 1; y <= building.y + building.height; y += 1) {
       for (let x = building.x - 1; x <= building.x + building.width; x += 1) {
         const key = keyOf(x, y);
-        if (expanded.has(key) && occupied.has(key) && expanded.get(key) !== building.id) errors.push(`margem insuficiente em ${building.id}`);
         expanded.set(key, building.id);
       }
     }
   }
   for (const building of map.buildings) {
     if (building.door && occupied.has(keyOf(building.door.x, building.door.y))) errors.push(`porta de ${building.id} está dentro de um footprint`);
+    if (building.zone === 'residential') for (const other of map.buildings) {
+      if (other === building) continue;
+      const horizontal = ['north', 'south'].includes(building.orientation);
+      const touches = horizontal
+        ? building.y < other.y + other.height && other.y < building.y + building.height && (building.x + building.width === other.x || other.x + other.width === building.x)
+        : building.x < other.x + other.width && other.x < building.x + building.width && (building.y + building.height === other.y || other.y + other.height === building.y);
+      if (touches) errors.push(`intervalo lateral residencial insuficiente em ${building.id}`);
+    }
+    const model = MODEL_BY_ID[building.assetId];
+    if (model && building.entrance) {
+      const angle = { south: 0, east: Math.PI / 2, north: Math.PI, west: -Math.PI / 2 }[building.orientation];
+      const [mx, my, mz] = model.entrance;
+      const expected = { x: building.x + building.width / 2 + mx * Math.cos(angle) + mz * Math.sin(angle),
+        y: building.y + building.height / 2 - mx * Math.sin(angle) + mz * Math.cos(angle), level: building.baseLevel + my / .25 };
+      if (Object.keys(expected).some((key) => Math.abs(expected[key] - building.entrance[key]) > 1e-6)) errors.push(`entrada diverge do modelo em ${building.id}`);
+    }
+    const path = building.accessPath;
+    if (!Array.isArray(path) || path.length < 2) continue;
+    if (Math.hypot(path[0].x - building.entrance?.x, path[0].y - building.entrance?.y) > 1e-6
+      || Math.hypot(path.at(-1).x - building.door?.x - .5, path.at(-1).y - building.door?.y - .5) > 1e-6) errors.push(`extremos do acesso inválidos em ${building.id}`);
+    for (let part = 1; part < path.length; part++) {
+      const start = path[part - 1], end = path[part];
+      if (![start.x, start.y, end.x, end.y].every(Number.isFinite)) { errors.push(`acesso não finito em ${building.id}`); break; }
+      const steps = Math.max(1, Math.ceil(Math.hypot(end.x - start.x, end.y - start.y) * 4));
+      if (steps > map.width * map.height) { errors.push(`acesso fora de escala em ${building.id}`); break; }
+      for (let step = 0; step <= steps; step++) {
+        const x = Math.floor(start.x + (end.x - start.x) * step / steps), y = Math.floor(start.y + (end.y - start.y) * step / steps);
+        const owner = occupied.get(keyOf(x, y));
+        if (x < 0 || y < 0 || x >= map.width || y >= map.height || map.terrain[y * map.width + x] === "water"
+          || (owner && owner !== building.id) || map.props?.some((prop) => prop.x === x && prop.y === y)) {
+          errors.push(`acesso bloqueado em ${building.id}`); break;
+        }
+      }
+    }
   }
   return { expanded, doorSet };
 }
@@ -238,7 +283,7 @@ function validateRoadTopology(map, roadSet, errors) {
   }
   const spec = map.gridSpec;
   if (!spec || ![spec.centerX, spec.centerY, spec.spacing, spec.radius].every(Number.isInteger)
-    || spec.spacing < 7 || spec.spacing > 9 || spec.radius < 1) {
+    || spec.spacing < 12 || spec.spacing > 16 || spec.radius < 1) {
     errors.push("gridSpec inválido");
     return;
   }
@@ -249,7 +294,7 @@ function validateRoadTopology(map, roadSet, errors) {
 
 function validateUrbanPlan(map, roadByKey, errors) {
   if (!Array.isArray(map.roadSegments) || !Array.isArray(map.frontages) || !Array.isArray(map.lots)) {
-    errors.push("camadas cadastrais v3 ausentes");
+    errors.push("camadas cadastrais v4 ausentes");
     return;
   }
   const segmentById = new Map();
@@ -295,6 +340,7 @@ function validateUrbanPlan(map, roadByKey, errors) {
       if (occupiedLots.has(key)) errors.push(`sobreposição entre ${lot.id} e ${occupiedLots.get(key)}`);
       occupiedLots.set(key, lot.id);
       if (map.terrain[cell.y * map.width + cell.x] === "water") errors.push(`lote molhado em ${lot.id}`);
+      if (map.zoneMap[cell.y * map.width + cell.x] !== lot.zone) errors.push(`lote fora do distrito em ${lot.id}`);
     }
   }
   for (const building of map.buildings) {
@@ -306,12 +352,35 @@ function validateUrbanPlan(map, roadByKey, errors) {
     }
     const accessRoad = roadByKey.get(keyOf(building.door?.x, building.door?.y));
     if (!accessRoad || accessRoad.bridge || ![5, 10].includes(accessRoad.connections)) errors.push(`porta em curva, junção ou ponte em ${building.id}`);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const neighbor = roadByKey.get(keyOf(building.door?.x + dx, building.door?.y + dy));
+      if (neighbor && (neighbor.bridge || neighbor.kind === "plaza" || ![5, 10].includes(neighbor.connections))) errors.push(`buffer viário insuficiente em ${building.id}`);
+    }
+    const requiredRear = { residential: 1, agricultural: 3, craft: 2, civic: 2, commercial: 0 }[building.zone];
+    if (!lot || lot.rearDepth < requiredRear) errors.push(`pátio insuficiente em ${building.id}`);
+    const lateral = building.zone === "commercial" ? 0 : building.zone === "civic" ? 2 : 1;
+    const front = building.zone === "civic" ? 2 : 0;
+    const leading = building.zone === 'civic' ? lateral : 0;
+    let x = building.x, y = building.y, width = building.width, height = building.height;
+    if (["north", "south"].includes(building.orientation)) {
+      x -= leading; width += leading + lateral; height += requiredRear + front;
+      y -= building.orientation === "south" ? requiredRear : front;
+    } else {
+      y -= leading; height += leading + lateral; width += requiredRear + front;
+      x -= building.orientation === "east" ? requiredRear : front;
+    }
+    for (let py = y; py < y + height; py++) for (let px = x; px < x + width; px++) {
+      if (!lotCells.has(keyOf(px, py))) errors.push(`geometria de pátio insuficiente em ${building.id}`);
+    }
+    const expectedBounds = { x, y, width, height };
+    if (!lot?.bounds || Object.keys(expectedBounds).some((key) => lot.bounds[key] !== expectedBounds[key])
+      || lotCells.size !== width * height) errors.push(`bounds de lote divergentes em ${building.id}`);
   }
 }
 
 export function validateVillage(map) {
   const errors = [];
-  if (map.schemaVersion !== 3) errors.push("schemaVersion inválido");
+  if (map.schemaVersion !== 4) errors.push("schemaVersion inválido");
   if (!Number.isInteger(map.width) || map.width !== map.height) errors.push("dimensões inválidas");
   if (!Array.isArray(map.terrain) || map.terrain.length !== map.width * map.height) errors.push("camada de terreno incompleta");
   if (!Array.isArray(map.heightLevel) || map.heightLevel.length !== map.width * map.height) errors.push("camada de altura incompleta");

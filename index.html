@@ -3,56 +3,71 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#101914">
-  <title>Village v3 — Gerador isométrico</title>
+  <meta name="theme-color" content="#f3f3f5">
+  <title>Village 4 — Gerador 3D</title>
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/app-icon/favicon.png">
   <link rel="stylesheet" href="styles.css">
+  <script type="module" src="src/theme.js"></script>
 </head>
 <body>
   <main class="app">
     <header class="topbar">
-      <div class="brand"><span class="crest">V</span><div><small>GERADOR ISOMÉTRICO</small><h1>Village v3</h1></div></div>
-      <div class="header-actions"><button id="center-button" class="button ghost" type="button">Centralizar</button><button id="export-button" class="button gold" type="button">Exportar PNG</button></div>
+      <div class="brand"><span class="crest">V</span><div><small>MUNDOS PROCEDURAIS 3D</small><h1>Village 4</h1></div></div>
+      <div class="header-actions"><label class="theme-control" for="theme-input">Tema<select id="theme-input"><option value="system">Sistema</option><option value="light">Claro</option><option value="dark">Escuro</option></select></label><button id="walk-button" class="button tonal" type="button" disabled>Passear</button><button id="center-button" class="button ghost" type="button">Centralizar</button><button id="overview-button" class="button ghost" type="button">Vista geral</button><button id="export-button" class="button gold" type="button">Exportar PNG</button></div>
     </header>
 
     <section class="workspace">
-      <aside class="panel">
-        <div class="panel-title"><div><small>ATELIÊ DE MUNDOS</small><h2>Nova vila</h2></div><span id="status" data-valid="true">Preparando</span></div>
+      <aside class="panel" aria-label="Configuração da vila">
+        <div class="panel-title"><h2>Configurar vila</h2><span id="status" data-valid="true" role="status">Preparando</span></div>
         <form id="generator-form">
-          <label for="seed-input">Seed</label>
-          <div class="seed-row"><input id="seed-input" maxlength="100" spellcheck="false"><button id="random-seed" type="button" aria-label="Nova seed">↻</button></div>
-
-          <div class="form-grid">
-            <div><label for="biome-input">Bioma</label><select id="biome-input"><option value="temperate">Campo temperado</option><option value="arid">Sertão árido</option><option value="snowy">Planalto nevado</option><option value="wetland">Pântano úmido</option></select></div>
-            <div><label for="settlement-input">Assentamento</label><select id="settlement-input"><option value="hamlet">Povoado</option><option value="village">Vila</option><option value="town">Cidade</option></select></div>
-            <div><label for="layout-input">Traçado das ruas</label><select id="layout-input"><option value="organic">Orgânico / sinuoso</option><option value="grid">Quadras ortogonais</option></select></div>
-            <div><label for="size-input">Escala</label><select id="size-input"><option value="72">Compacta</option><option value="96">Padrão</option><option value="128">Expansiva</option></select></div>
+          <label class="visually-hidden" for="preset-input">Configuração rápida</label>
+          <div class="preset-row"><select id="preset-input" title="Preenche os ajustes sem gerar nem alterar a seed"><option value="custom">Personalizada</option><option value="village">Vila equilibrada</option><option value="rural">Povoado rural</option><option value="city">Cidade em quadras</option><option value="river">Vila ribeirinha</option></select><button id="reset-settings" class="button ghost" type="button" title="Restaurar o território padrão, mantendo a seed e as preferências de visualização">Restaurar</button></div>
+          <div class="seed-field">
+            <label for="seed-input">Seed <span class="label-hint">Enter para aplicar</span></label>
+            <div class="seed-row"><input id="seed-input" maxlength="100" spellcheck="false" autocomplete="off"><button id="random-seed" type="button" aria-label="Sortear seed e gerar vila" title="Sortear seed e gerar vila">↻</button></div>
           </div>
-
-          <div class="range-title"><label for="water-input">Presença de água</label><output id="water-value">Equilibrado</output></div>
-          <input id="water-input" type="range" min="0.05" max="0.75" step="0.05" value="0.35">
-          <div class="size-readout"><span>Mapa efetivo</span><output id="size-value">96 × 96</output></div>
-          <p class="field-help">No modo Quadras, as ruas seguem os eixos cardeais do mapa. Elas parecem diagonais apenas na projeção isométrica.</p>
-          <label class="toggle"><input id="river-input" type="checkbox"><span></span>Rio atravessando a região</label>
-          <label class="toggle"><input id="zones-input" type="checkbox"><span></span>Exibir zonas funcionais</label>
-          <button id="generate-button" class="button generate" type="submit">✦ Gerar novo vilarejo</button>
+          <div class="form-grid">
+            <div><label for="biome-input">Bioma</label><select id="biome-input"><option value="temperate">Temperado</option><option value="arid">Árido</option><option value="snowy">Nevado</option><option value="wetland">Pântano</option></select></div>
+            <div><label for="settlement-input">Assentamento</label><select id="settlement-input"><option value="hamlet">Povoado</option><option value="village">Vila</option><option value="town">Cidade</option></select></div>
+            <div><label for="layout-input">Ruas</label><select id="layout-input" title="Quadras seguem os eixos do terreno; a câmera isométrica pode fazê-las parecer diagonais."><option value="organic">Orgânicas</option><option value="grid">Em quadras</option></select></div>
+            <div><label for="size-input">Tamanho <output id="size-value">96 × 96</output></label><select id="size-input"><option value="72">Compacto</option><option value="96">Padrão</option><option value="128">Amplo</option></select></div>
+          </div>
+          <div class="water-control">
+            <div class="range-title"><label for="water-input" title="Intensidade da água no gerador; não é uma porcentagem da área coberta">Água · intensidade</label><output id="water-value">Equilibrado</output></div>
+            <input id="water-input" type="range" min="0.05" max="0.75" step="0.05" value="0.35" aria-describedby="water-value">
+            <label class="toggle"><input id="river-input" type="checkbox"><span aria-hidden="true"></span>Rio atravessando a região</label>
+          </div>
+          <fieldset class="view-controls">
+            <legend>Visualização <span>aplicação imediata</span></legend>
+            <div class="quality-row"><label for="quality-input">Qualidade</label><select id="quality-input"><option value="standard">Padrão · com sombras</option><option value="economy">Econômica · sem sombras</option></select></div>
+            <label class="toggle"><input id="zones-input" type="checkbox"><span aria-hidden="true"></span>Mostrar distritos</label>
+          </fieldset>
         </form>
-
-        <article class="summary">
-          <div class="summary-head"><div><small>MAPA ATUAL</small><strong id="village-name">—</strong></div><button id="copy-seed" type="button">Copiar seed</button></div>
-          <div class="stats"><div><span>Casas</span><b id="stat-houses">—</b></div><div><span>Serviços</span><b id="stat-services">—</b></div><div><span>Pontes</span><b id="stat-bridges">—</b></div><div><span>Props</span><b id="stat-props">—</b></div></div>
-          <div class="time"><span>Geração + render</span><b id="stat-time">—</b></div>
-        </article>
+        <div class="panel-footer">
+          <p id="pending-changes" aria-live="polite">Ajuste o território e aplique quando quiser.</p>
+          <div class="generation-actions"><button id="apply-button" class="button ghost" type="button" title="Gerar com a seed e os ajustes atuais">Aplicar ajustes</button><button id="generate-button" form="generator-form" class="button generate" type="submit" title="Sortear outra seed e gerar">✦ Nova vila</button></div>
+          <article class="summary" aria-label="Resumo do mapa atual">
+            <div class="summary-head"><div><small>MAPA ATUAL</small><strong id="village-name">—</strong></div><button id="copy-seed" type="button">Copiar seed</button></div>
+            <div class="stats"><div><span>Casas</span><b id="stat-houses">—</b></div><div><span>Serviços</span><b id="stat-services">—</b></div><div><span>Pontes</span><b id="stat-bridges">—</b></div><div><span>Objetos</span><b id="stat-props">—</b></div></div>
+            <div class="time"><span>Geração + cena</span><b id="stat-time">—</b></div>
+          </article>
+        </div>
       </aside>
 
-      <section class="stage" aria-label="Mapa isométrico gerado">
-        <canvas id="village-canvas" tabindex="0" aria-label="Mapa isométrico. Arraste para navegar e use a roda para ampliar."></canvas>
-        <div class="chips"><span id="biome-chip">Campo temperado</span><span id="layout-chip">Orgânico</span><span class="iso-chip">◆ Isométrico 2.5D</span></div>
+      <section class="stage" aria-label="Mapa 3D gerado">
+        <canvas id="village-canvas" tabindex="0" aria-label="Mapa 3D. Arraste esquerdo para mover, direito para girar, roda para ampliar."></canvas>
+        <div class="chips"><span id="biome-chip">Campo temperado</span><span id="layout-chip">Orgânico</span><span class="iso-chip">◆ 3D</span></div>
+        <div class="camera-help">Arraste: mover · Botão direito: girar · Roda: ampliar</div>
         <div class="zoom"><button id="zoom-out" type="button">−</button><span id="zoom-label">100%</span><button id="zoom-in" type="button">+</button></div>
         <div id="zone-legend" class="zone-legend" hidden><span data-zone="residential">Residencial</span><span data-zone="commercial">Comércio</span><span data-zone="craft">Oficinas</span><span data-zone="civic">Cívica</span><span data-zone="agricultural">Rural</span></div>
         <div id="loading" class="loading" role="status" aria-live="polite" hidden><i></i><strong>Construindo o relevo…</strong></div>
+        <div id="walk-hud" hidden>WASD · Caminhar &nbsp; Espaço · Pular &nbsp; Shift · Correr &nbsp; Mouse · Olhar &nbsp; Esc · Pausar</div>
+        <section id="walk-pause" role="dialog" aria-labelledby="walk-pause-title" aria-modal="true" hidden><h2 id="walk-pause-title">Passeio pausado</h2><p>Explore as ruas e pontes ao nível do chão.</p><div><button id="walk-resume" class="button generate" type="button">Continuar</button><button id="walk-exit" class="button ghost" type="button">Voltar à vista aérea</button></div></section>
       </section>
     </section>
   </main>
+  <div id="notification" class="snackbar" role="status" aria-live="polite" hidden><span></span><button type="button" aria-label="Fechar mensagem">Fechar</button></div>
+  <script type="importmap">{"imports":{"three":"/vendor/three/three.module.js","three/addons/":"/vendor/three/addons/"}}</script>
   <script type="module" src="src/app.js"></script>
 </body>
 </html>

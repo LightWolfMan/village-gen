@@ -1,4 +1,4 @@
-.cache/blender/
+.cache/
 tools/blender/*.blend
 tools/blender/*.blend1
 
@@ -6,3 +6,13 @@ tools/blender/*.blend1
 .claude/
 tools/blender/__pycache__/
 node_modules/
+workbench/
+dist/
+native/.godot/
+native/assets/models/
+native/assets/app-icon/
+native/**/bin/
+native/**/obj/
+native/CoreTests/TestResults/
+desktop/bin/
+desktop/obj/

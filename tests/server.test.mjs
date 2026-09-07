@@ -35,13 +35,13 @@ async function startServer() {
   return { child, base: `http://127.0.0.1:${port}` };
 }
 
-test('servidor entrega a aplicação v3 e bloqueia requisições inseguras', async (t) => {
+test('servidor entrega a aplicação 3D e bloqueia requisições inseguras', async (t) => {
   const { child, base } = await startServer();
   t.after(() => child.kill());
 
   const home = await fetch(`${base}/`);
   assert.equal(home.status, 200);
-  assert.match(await home.text(), /Village v3/);
+  assert.match(await home.text(), /Village 4/);
   assert.match(home.headers.get('content-type'), /^text\/html/);
 
   const module = await fetch(`${base}/src/core/index.js`);
@@ -58,4 +58,14 @@ test('servidor entrega a aplicação v3 e bloqueia requisições inseguras', asy
   assert.equal(post.status, 405);
 
   assert.equal((await fetch(`${base}/src/app.js`)).status, 200);
+  const worker = await fetch(`${base}/src/generation-worker.js`);
+  assert.equal(worker.status, 200);
+  assert.match(worker.headers.get('content-type'), /^text\/javascript/);
+  const esm = await fetch(`${base}/server.mjs`, { method: 'HEAD' });
+  assert.equal(esm.status, 200);
+  assert.match(esm.headers.get('content-type'), /^text\/javascript/);
+  const three = await fetch(`${base}/vendor/three/three.module.js`);
+  assert.equal(three.status, 200);
+  assert.match(three.headers.get('content-type'), /^text\/javascript/);
+  assert.equal((await fetch(`${base}/vendor/three/addons/loaders/GLTFLoader.js`)).status, 200);
 });

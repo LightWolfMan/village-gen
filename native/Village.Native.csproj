@@ -1,0 +1,11 @@
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <UseSharedCompilation>false</UseSharedCompilation>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Village.Native</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup><Compile Remove="CoreTests/**/*.cs" /><Compile Remove="SimulationTests/**/*.cs" /></ItemGroup>
+</Project>

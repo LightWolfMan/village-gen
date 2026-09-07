@@ -1,8 +1,9 @@
 import { coordinateHash, createRandom, hashString } from "./random.js";
-import { findPath } from "./pathfinding.js";
+import { findPath, MinHeap } from "./pathfinding.js";
 import { addRoadPath, bridgeAxisAt, finalizeRoadTopology } from "./road-topology.js";
-import { createUrbanPlan } from "./urbanism.js";
+import { createUrbanPlan, HOUSE_QUOTAS } from "./urbanism.js";
 import { validateVillage } from "./validation.js";
+import { MODEL_CATALOG } from "../../assets/models/catalog.js";
 
 export const DEFAULT_SETTINGS = Object.freeze({
   mapSize: 96,
@@ -26,19 +27,6 @@ const SETTLEMENTS = Object.freeze({
   town: { houses: [55, 85], services: ["inn", "shop", "smithy", "hall", "chapel", "market", "mill", "tower"] },
 });
 
-/**
- * Raio aproximado, em tiles, da mancha construida de um assentamento. Serve
- * de referencia para o traçado: a malha em grade usava uma fracao fixa da
- * largura do mapa e chegava ao dobro da area realmente ocupada, o que produzia
- * quadras inteiras de rua deserta em volta da cidade.
- */
-function builtRadius(settlementKey) {
-  const settlement = SETTLEMENTS[settlementKey] ?? SETTLEMENTS.village;
-  const buildings = (settlement.houses[0] + settlement.houses[1]) / 2 + settlement.services.length;
-  // ~14 tiles por edificio somando recuo lateral e frente de rua; a mancha
-  // cresce como um losango, cuja area e cerca de 2r².
-  return Math.sqrt(buildings * 14 / 2);
-}
 
 const MAP_SIZES = [72, 96, 128];
 const DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -48,12 +36,6 @@ const ZONE_LABELS = Object.freeze({
   craft: "Bairro dos oficios",
   civic: "Centro civico",
   agricultural: "Cintura agricola",
-});
-const TYPE_ZONES = Object.freeze({
-  house: ["residential", "agricultural", "craft", "commercial"],
-  inn: ["commercial"], shop: ["commercial"], market: ["commercial"],
-  smithy: ["craft"], mill: ["craft", "agricultural"],
-  hall: ["civic"], chapel: ["civic"], tower: ["civic"],
 });
 const BIOME_STYLES = Object.freeze({
   temperate: {
@@ -133,7 +115,10 @@ function createTerrain(seed, settings) {
       const moisture = fractalNoise(seed, x, y, 31);
       const edgeDistance = Math.min(x, y, width - x - 1, height - y - 1);
       const edgeDrop = clamp(edgeDistance / 9, 0.72, 1);
-      const adjusted = elevation * edgeDrop;
+      // A broad settlement plateau supplies enough land for full geometry and
+      // yards; the river is carved afterwards and remains an actual obstacle.
+      const radial = Math.hypot(x - width / 2, y - height / 2) / (width * 0.5);
+      const adjusted = Math.max(elevation * edgeDrop, waterLine + 0.13 - radial * 0.14);
       if (adjusted < waterLine) {
         terrain[index] = "water";
         heightLevel[index] = 0;
@@ -261,8 +246,48 @@ function choosePlaza(map, random, choice = 0) {
   return { x, y, width: size, height: size, level };
 }
 
+function inCivicCampus(map, x, y) {
+  const campus = map.civicCampus;
+  return campus && x >= campus.x && x < campus.x + campus.width && y >= campus.y && y < campus.y + campus.height;
+}
+
+function reserveCivicCampus(map) {
+  if (map.settings.settlement === "hamlet") return null;
+  const size = map.settings.settlement === "town" ? 20 : 14;
+  const candidates = [];
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+    const x = sx < 0 ? map.plaza.x - size - 3 : map.plaza.x + map.plaza.width + 3;
+    const y = sy < 0 ? map.plaza.y - size - 3 : map.plaza.y + map.plaza.height + 3;
+    if (x < 2 || y < 2 || x + size >= map.width - 2 || y + size >= map.height - 2) continue;
+    let wet = 0, min = 7, max = 0;
+    for (let py = y - 1; py <= y + size; py++) for (let px = x - 1; px <= x + size; px++) {
+      const index = py * map.width + px;
+      if (map.terrain[index] === "water") wet++;
+      min = Math.min(min, map.heightLevel[index]); max = Math.max(max, map.heightLevel[index]);
+    }
+    candidates.push({ x, y, width: size, height: size, wet, slope: max - min });
+  }
+  candidates.sort((a, b) => a.wet - b.wet || a.slope - b.slope);
+  const chosen = candidates[0];
+  if (!chosen || chosen.wet) throw new Error(`Parcelamento insuficiente para campus cívico seco na seed ${map.seed}`);
+  return { x: chosen.x, y: chosen.y, width: size, height: size };
+}
+
+function createCivicPerimeter(map, roadMap) {
+  const c = map.civicCampus;
+  if (!c) return;
+  const left = c.x - 1, right = c.x + c.width, top = c.y - 1, bottom = c.y + c.height;
+  for (const y of [top, bottom]) addRoadPath(roadMap, Array.from({ length: right - left + 1 }, (_, i) => ({ x: left + i, y })), "street", map);
+  for (const x of [left, right]) addRoadPath(roadMap, Array.from({ length: bottom - top + 1 }, (_, i) => ({ x, y: top + i })), "street", map);
+  const center = { x: map.plaza.x + Math.floor(map.plaza.width / 2), y: map.plaza.y + Math.floor(map.plaza.height / 2) };
+  const corner = { x: Math.abs(center.x - left) < Math.abs(center.x - right) ? left : right,
+    y: Math.abs(center.y - top) < Math.abs(center.y - bottom) ? top : bottom };
+  routeRoad(map, roadMap, center, corner, roadCost(map, hashString(`${map.seed}:campus`)), "street");
+}
+
 function roadCost(map, randomSeed) {
   return (x, y, previousX, previousY) => {
+    if (inCivicCampus(map, x, y)) return Infinity;
     const index = y * map.width + x;
     const previous = previousY * map.width + previousX;
     const waterCost = map.terrain[index] === "water" ? 4 : 0;
@@ -273,7 +298,7 @@ function roadCost(map, randomSeed) {
 }
 
 function nearestDryRoadPoint(map, point) {
-  if (map.terrain[point.y * map.width + point.x] !== "water") return point;
+  if (map.terrain[point.y * map.width + point.x] !== "water" && !inCivicCampus(map, point.x, point.y)) return point;
   for (let radius = 1; radius < Math.max(map.width, map.height); radius += 1) {
     for (let offset = -radius; offset <= radius; offset += 1) {
       const candidates = [
@@ -282,7 +307,7 @@ function nearestDryRoadPoint(map, point) {
       ];
       for (const candidate of candidates) {
         if (candidate.x < 1 || candidate.y < 1 || candidate.x >= map.width - 1 || candidate.y >= map.height - 1) continue;
-        if (map.terrain[candidate.y * map.width + candidate.x] !== "water") return candidate;
+        if (map.terrain[candidate.y * map.width + candidate.x] !== "water" && !inCivicCampus(map, candidate.x, candidate.y)) return candidate;
       }
     }
   }
@@ -316,33 +341,16 @@ function createOrganicRoads(map, random, roadMap) {
   for (const endpoint of endpoints) {
     routeRoad(map, roadMap, center, endpoint, cost, "main");
   }
-  const ringRadius = map.settings.settlement === "hamlet" ? 10 : map.settings.settlement === "town" ? 25 : 17;
-  const anchors = [
-    { x: clamp(center.x - ringRadius, 2, map.width - 3), y: center.y },
-    { x: center.x, y: clamp(center.y - ringRadius, 2, map.height - 3) },
-    { x: clamp(center.x + ringRadius, 2, map.width - 3), y: center.y },
-    { x: center.x, y: clamp(center.y + ringRadius, 2, map.height - 3) },
-  ];
-  for (let index = 0; index < anchors.length; index += 1) {
-    const start = anchors[index];
-    const goal = anchors[(index + 1) % anchors.length];
-    routeRoad(map, roadMap, start, goal, cost, "street");
-    routeRoad(map, roadMap, center, start, cost, "street");
-  }
-  if (map.settings.settlement !== "hamlet") {
-    // O anel externo e a principal fonte de frente de rua reta, que e a unica
-    // superficie onde o parcelamento pode encostar um edificio. Aperta-lo
-    // adensava o desenho, mas estrangulava seeds de pouca terra firme.
-    const outer = Math.floor(ringRadius * (map.settings.settlement === "town" ? 1.55 : 1.45));
-    const outerAnchors = [[-outer, -outer], [outer, -outer], [outer, outer], [-outer, outer]].map(([dx, dy]) => ({
-      x: clamp(center.x + dx, 2, map.width - 3), y: clamp(center.y + dy, 2, map.height - 3),
-    }));
-    for (let index = 0; index < outerAnchors.length; index += 1) {
-      const start = outerAnchors[index];
-      const goal = outerAnchors[(index + 1) % 4];
-      addLine(map, roadMap, start.x, start.y, goal.x, goal.y, "street");
-      routeRoad(map, roadMap, anchors[index], outerAnchors[index], cost, "street");
-    }
+  // Full-sized 3D lots require feeder streets beyond the old sprite-era ring.
+  const compactVillage = map.settings.settlement === 'village' && map.width === 72;
+  const reach = compactVillage ? 33 : map.settings.settlement === "hamlet" ? 25 : map.settings.settlement === "town" ? 49 : 37;
+  for (let offset = -reach + 1; offset < reach; offset += compactVillage ? 16 : 12) {
+    if (compactVillage && offset === 0) continue;
+    const jitter = random.int(-1, 1);
+    const x = clamp(center.x + offset + jitter, 3, map.width - 4);
+    const y = clamp(center.y + offset - jitter, 3, map.height - 4);
+    addLine(map, roadMap, x, clamp(center.y - reach, 2, map.height - 3), x, clamp(center.y + reach, 2, map.height - 3), "street");
+    addLine(map, roadMap, clamp(center.x - reach, 2, map.width - 3), y, clamp(center.x + reach, 2, map.width - 3), y, "street");
   }
 }
 
@@ -360,19 +368,19 @@ function addLine(map, roadMap, x1, y1, x2, y2, kind) {
 function createGridRoads(map, random, roadMap) {
   const centerX = map.plaza.x + Math.floor(map.plaza.width / 2);
   const centerY = map.plaza.y + Math.floor(map.plaza.height / 2);
-  const spacing = random.int(7, 9);
+  const spacing = map.settings.settlement === 'village' && map.width === 72 ? 16 : random.int(12, 14);
   // Antes era uma fracao fixa da largura do mapa (0.34), o que numa cidade dava
   // quase o dobro da area ocupada e enchia o entorno de quadras desertas. O
   // fator nao desce mais que isto porque a grade e a fonte de frente de rua.
-  const radius = Math.max(spacing * 2, Math.round(builtRadius(map.settings.settlement) * 1.3));
+  const radius = map.settings.settlement === "hamlet" ? 27 : map.settings.settlement === "town" ? 50 : 38;
   map.gridSpec = { centerX, centerY, spacing, radius };
   addLine(map, roadMap, 1, centerY, map.width - 2, centerY, "main");
   addLine(map, roadMap, centerX, 1, centerX, map.height - 2, "main");
   for (let x = centerX - Math.floor(radius / spacing) * spacing; x <= centerX + radius; x += spacing) {
-    if (x > 1 && x < map.width - 2) addLine(map, roadMap, x, centerY - radius, x, centerY + radius, "street");
+    if (x > 1 && x < map.width - 2) addLine(map, roadMap, x, clamp(centerY - radius, 2, map.height - 3), x, clamp(centerY + radius, 2, map.height - 3), "street");
   }
   for (let y = centerY - Math.floor(radius / spacing) * spacing; y <= centerY + radius; y += spacing) {
-    if (y > 1 && y < map.height - 2) addLine(map, roadMap, centerX - radius, y, centerX + radius, y, "street");
+    if (y > 1 && y < map.height - 2) addLine(map, roadMap, clamp(centerX - radius, 2, map.width - 3), y, clamp(centerX + radius, 2, map.width - 3), y, "street");
   }
 }
 
@@ -397,8 +405,13 @@ function nearestRoadAnchor(map, target, used = new Set()) {
   let best = map.roads[0];
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const road of map.roads) {
-    if (used.has(keyOf(road.x, road.y))) continue;
-    const distance = Math.abs(road.x - target.x) + Math.abs(road.y - target.y);
+    if (road.bridge || used.has(keyOf(road.x, road.y))) continue;
+    let blocked = 0;
+    for (let dy = -8; dy <= 8; dy += 2) for (let dx = -8; dx <= 8; dx += 2) {
+      const x = road.x + dx, y = road.y + dy;
+      if (x < 1 || y < 1 || x >= map.width - 1 || y >= map.height - 1 || map.terrain[y * map.width + x] === "water") blocked++;
+    }
+    const distance = Math.abs(road.x - target.x) + Math.abs(road.y - target.y) + blocked * 1.5;
     if (distance < bestDistance) { best = road; bestDistance = distance; }
   }
   return { x: best?.x ?? target.x, y: best?.y ?? target.y };
@@ -406,14 +419,16 @@ function nearestRoadAnchor(map, target, used = new Set()) {
 
 function createZones(map) {
   const center = { x: map.plaza.x + Math.floor(map.plaza.width / 2), y: map.plaza.y + Math.floor(map.plaza.height / 2) };
-  const radius = map.settings.settlement === "hamlet" ? 17 : map.settings.settlement === "town" ? 48 : 32;
+  const radius = map.settings.settlement === "hamlet" ? 28 : map.settings.settlement === "town" ? 56 : 44;
+  const anchorRadius = Math.min(radius, map.width * .3);
   const targets = {
     civic: center,
-    commercial: { x: center.x + Math.round(radius * 0.66), y: center.y - Math.round(radius * 0.08) },
-    craft: { x: center.x - Math.round(radius * 0.68), y: center.y + Math.round(radius * 0.12) },
-    agricultural: { x: center.x, y: center.y + Math.round(radius * 0.76) },
-    residential: { x: center.x, y: center.y - Math.round(radius * 0.75) },
+    commercial: { x: center.x + Math.round(anchorRadius * 0.66), y: center.y - Math.round(anchorRadius * 0.08) },
+    craft: { x: center.x - Math.round(anchorRadius * 0.68), y: center.y + Math.round(anchorRadius * 0.12) },
+    agricultural: { x: center.x, y: center.y + Math.round(anchorRadius * 0.76) },
+    residential: { x: center.x, y: center.y - Math.round(anchorRadius * 0.75) },
   };
+  if (map.settings.settlement === 'hamlet') targets.craft = { x: targets.commercial.x, y: targets.commercial.y + 10 };
   const types = ["civic", "commercial", "craft", "agricultural", "residential"];
   const usedAnchors = new Set();
   const anchors = {};
@@ -429,50 +444,159 @@ function createZones(map) {
     }
   }
   const zoneMap = new Array(map.width * map.height).fill("none");
+  // Each source needs its own distance field: growth multipliers differ, so
+  // losing at a junction does not imply losing farther along the same road.
+  const costs = Object.fromEntries(types.map(type => [type, new Float64Array(zoneMap.length).fill(Infinity)]));
+  const roadCells = new Set(map.roads.map(({ x, y }) => y * map.width + x));
+  const frontier = new MinHeap();
+  for (const type of types) {
+    const anchor = anchors[type];
+    const index = anchor.y * map.width + anchor.x;
+    const initialCost = type === "civic" ? -3 : 0;
+    costs[type][index] = initialCost;
+    frontier.push({ index, type, score: initialCost });
+  }
   const minimumX = clamp(center.x - radius, 1, map.width - 2);
   const maximumX = clamp(center.x + radius, 1, map.width - 2);
   const minimumY = clamp(center.y - radius, 1, map.height - 2);
   const maximumY = clamp(center.y + radius, 1, map.height - 2);
-  const queue = [];
-  const districtCore = map.settings.settlement === "hamlet" ? 6 : map.settings.settlement === "town" ? 9 : 8;
-  for (const type of types.filter((item) => item !== "civic")) {
-    const anchor = anchors[type];
-    for (let y = anchor.y - districtCore; y <= anchor.y + districtCore; y += 1) {
-      for (let x = anchor.x - districtCore; x <= anchor.x + districtCore; x += 1) {
-        if (Math.abs(x - anchor.x) + Math.abs(y - anchor.y) > districtCore) continue;
-        if (x < minimumX || x > maximumX || y < minimumY || y > maximumY) continue;
-        const index = y * map.width + x;
-        if (zoneMap[index] !== "none") continue;
+  // Multi-source terrain-weighted growth. Roads lower the walking cost, water
+  // can only be crossed at an existing bridge, and steep slopes resist growth.
+  const growth = { residential: 0.62, agricultural: 0.78, commercial: 0.95, craft: 0.85, civic: 1.25 };
+  if (map.settings.settlement === "hamlet") { growth.agricultural = 0.65; growth.civic = 2.5; growth.craft = 1.4; }
+  if (map.settings.settlement === "town") { growth.craft = 0.65; growth.commercial = 0.8; growth.residential = 0.7; }
+  while (frontier.length) {
+    const cell = frontier.pop();
+    const field = costs[cell.type];
+    if (cell.score !== field[cell.index]) continue;
+    const cx = cell.index % map.width, cy = Math.floor(cell.index / map.width);
+    for (const [dx, dy] of DIRECTIONS) {
+      const x = cx + dx, y = cy + dy;
+      if (x < minimumX || x > maximumX || y < minimumY || y > maximumY) continue;
+      const index = y * map.width + x;
+      if (map.terrain[index] === "water" && !roadCells.has(index)) continue;
+      const step = (roadCells.has(index) ? 0.85 : 1.2) + Math.abs(map.heightLevel[index] - map.heightLevel[cell.index]) * 0.25;
+      const score = cell.score + step * growth[cell.type];
+      if (score >= field[index]) continue;
+      field[index] = score;
+      frontier.push({ index, type: cell.type, score });
+    }
+  }
+  for (let index = 0; index < zoneMap.length; index++) {
+    let best = Infinity;
+    for (const type of types) {
+      if (costs[type][index] < best) {
+        best = costs[type][index];
         zoneMap[index] = type;
-        queue.push({ x, y, type });
       }
     }
   }
-  // Civic buildings need actual frontage outside the reserved plaza. Seeding a
-  // compact connected civic core guarantees minimum parcel capacity before
-  // the other districts expand around it.
-  const civicRadius = map.settings.settlement === "hamlet" ? 8 : map.settings.settlement === "town" ? 18 : 14;
-  for (let y = center.y - civicRadius; y <= center.y + civicRadius; y += 1) {
-    for (let x = center.x - civicRadius; x <= center.x + civicRadius; x += 1) {
-      if (Math.abs(x - center.x) + Math.abs(y - center.y) > civicRadius) continue;
-      if (x < minimumX || x > maximumX || y < minimumY || y > maximumY) continue;
-      const index = y * map.width + x;
-      if (zoneMap[index] !== "none") continue;
-      zoneMap[index] = "civic";
-      queue.push({ x, y, type: "civic" });
+  // Reserve the planned civic district as a whole before any lot is placed.
+  if (map.civicCampus) {
+    const c = map.civicCampus;
+    for (let y = c.y - 1; y <= c.y + c.height; y++) for (let x = c.x - 1; x <= c.x + c.width; x++) zoneMap[y * map.width + x] = "civic";
+  }
+  // Existing roads delimit blocks. A small block receives one district before
+  // parceling, rather than a weighted boundary slicing through every deep lot.
+  const visitedBlocks = new Uint8Array(zoneMap.length);
+  const districtBlocks = [];
+  for (let y = minimumY; y <= maximumY; y++) for (let x = minimumX; x <= maximumX; x++) {
+    const start = y * map.width + x;
+    if (visitedBlocks[start] || roadCells.has(start) || map.terrain[start] === "water") continue;
+    const cells = [start], counts = Object.fromEntries(types.map(type => [type, 0]));
+    let campus = false;
+    visitedBlocks[start] = 1;
+    for (let cursor = 0; cursor < cells.length; cursor++) {
+      const index = cells[cursor], cx = index % map.width, cy = Math.floor(index / map.width);
+      if (Object.hasOwn(counts, zoneMap[index])) counts[zoneMap[index]]++;
+      if (inCivicCampus(map, cx, cy)) campus = true;
+      for (const [dx, dy] of DIRECTIONS) {
+        const nx = cx + dx, ny = cy + dy, next = ny * map.width + nx;
+        if (nx < minimumX || nx > maximumX || ny < minimumY || ny > maximumY
+          || visitedBlocks[next] || roadCells.has(next) || map.terrain[next] === "water") continue;
+        visitedBlocks[next] = 1; cells.push(next);
+      }
+    }
+    if (cells.length > 350) continue;
+    const winner = campus ? "civic" : types.reduce((best, type) => counts[type] > counts[best] ? type : best, types[0]);
+    if (!campus && !counts[winner]) continue;
+    for (const index of cells) zoneMap[index] = winner;
+    if (winner !== "civic") {
+      const distances = Object.fromEntries(types.map(type => [type, cells.reduce((sum, index) => sum + costs[type][index], 0) / cells.length]));
+      districtBlocks.push({ cells, zone: winner, distances });
     }
   }
-  for (let cursor = 0; cursor < queue.length; cursor += 1) {
-    const cell = queue[cursor];
-    for (const [dx, dy] of DIRECTIONS) {
-      const x = cell.x + dx;
-      const y = cell.y + dy;
-      if (x < minimumX || x > maximumX || y < minimumY || y > maximumY) continue;
-      const index = y * map.width + x;
-      if (zoneMap[index] !== "none") continue;
-      zoneMap[index] = cell.type;
-      queue.push({ x, y, type: cell.type });
+  // Correct only meaningful capacity deficits, moving whole pre-existing blocks
+  // before buildings exist. House count alone understates farms and work yards.
+  const functional = ["residential", "agricultural", "craft", "commercial"];
+  const areas = Object.fromEntries(functional.map(type => [type, 0]));
+  for (let index = 0; index < zoneMap.length; index++) {
+    if (!roadCells.has(index) && map.terrain[index] !== "water" && Object.hasOwn(areas, zoneMap[index])) areas[zoneMap[index]]++;
+  }
+  const settlement = SETTLEMENTS[map.settings.settlement];
+  const population = (settlement.houses[0] + settlement.houses[1]) / 2;
+  const lotAreas = { residential: map.settings.settlement === "town" ? 42 : 30, agricultural: 60, craft: 56, commercial: 25 };
+  const representative = Object.fromEntries(functional.map(type => {
+    const family = { residential: map.settings.settlement === "town" ? "townhouse" : "cottage", agricultural: "farmstead", craft: "artisan", commercial: "merchant" }[type];
+    const model = MODEL_CATALOG.filter(model => model.biome === map.settings.biome && model.family === family)
+      .sort((a, b) => a.footprint.width * a.footprint.height - b.footprint.width * b.footprint.height)[0];
+    const lateral = type === "commercial" ? 0 : 1, rear = { residential: 1, agricultural: 3, craft: 2, commercial: 0 }[type];
+    return [type, [model.footprint.width + lateral * 2, model.footprint.height + rear]];
+  }));
+  for (const block of districtBlocks) {
+    const cellSet = new Set(block.cells);
+    const sortedCells = [...block.cells].sort((a, b) => a - b);
+    block.capacity = {};
+    for (const type of functional) {
+      const [w, h] = representative[type];
+      let best = 0;
+      for (const [width, height] of [[w, h], [h, w]]) {
+        const occupied = new Set(); let count = 0;
+        for (const start of sortedCells) {
+          if (occupied.has(start)) continue;
+          const x = start % map.width, y = Math.floor(start / map.width);
+          if (x + width > map.width || y + height > map.height) continue;
+          let clear = true;
+          for (let dy = 0; clear && dy < height; dy++) for (let dx = 0; dx < width; dx++) {
+            const index = start + dy * map.width + dx;
+            if (!cellSet.has(index) || occupied.has(index)) { clear = false; break; }
+          }
+          if (!clear) continue;
+          for (let dy = 0; dy < height; dy++) for (let dx = 0; dx < width; dx++) occupied.add(start + dy * map.width + dx);
+          count++;
+        }
+        best = Math.max(best, count);
+      }
+      block.capacity[type] = best * w * h;
     }
+    // Narrow river remnants contribute no fictitious agricultural capacity.
+    areas[block.zone] += block.capacity[block.zone] - block.cells.length;
+  }
+  const required = Object.fromEntries(functional.map(type => [type, population * HOUSE_QUOTAS[map.settings.settlement][type] * lotAreas[type]]));
+  for (const service of settlement.services) {
+    if (["inn", "shop", "market"].includes(service)) required.commercial += service === "inn" ? 45 : service === "market" ? 40 : 25;
+    if (["smithy", "mill"].includes(service)) required.craft += 56;
+  }
+  const available = Object.values(areas).reduce((sum, area) => sum + area, 0);
+  const demand = Object.values(required).reduce((sum, area) => sum + area, 0);
+  const areaTargets = Object.fromEntries(functional.map(type => [type, available * required[type] / demand]));
+  for (let pass = 0; pass < districtBlocks.length; pass++) {
+    const receiver = [...functional].sort((a, b) => areas[a] / areaTargets[a] - areas[b] / areaTargets[b])[0];
+    if (areas[receiver] >= areaTargets[receiver] * .85) break;
+    let chosen = null, bestScore = Infinity;
+    for (const block of districtBlocks) {
+      const donor = block.zone, size = block.capacity[donor], gain = block.capacity[receiver];
+      if (!gain || donor === receiver || areas[donor] <= areaTargets[donor] * 1.05 || areas[donor] - size < areaTargets[donor] * .75) continue;
+      const before = Math.abs(areas[receiver] - areaTargets[receiver]) + Math.abs(areas[donor] - areaTargets[donor]);
+      const after = Math.abs(areas[receiver] + gain - areaTargets[receiver]) + Math.abs(areas[donor] - size - areaTargets[donor]);
+      if (after >= before) continue;
+      const score = (block.distances[receiver] - block.distances[donor]) / Math.max(1, before - after);
+      if (score < bestScore) { bestScore = score; chosen = block; }
+    }
+    if (!chosen) break;
+    areas[chosen.zone] -= chosen.capacity[chosen.zone]; areas[receiver] += chosen.capacity[receiver];
+    chosen.zone = receiver;
+    for (const index of chosen.cells) zoneMap[index] = receiver;
   }
   // The plaza is always civic, irrespective of a Voronoi tie at its edge.
   for (let y = map.plaza.y; y < map.plaza.y + map.plaza.height; y += 1) {
@@ -542,17 +666,6 @@ function finalizeZones(map) {
   });
 }
 
-function rectangleClear(map, reserved, x, y, width, height) {
-  if (x < 2 || y < 2 || x + width >= map.width - 2 || y + height >= map.height - 2) return false;
-  for (let py = y; py < y + height; py += 1) {
-    for (let px = x; px < x + width; px += 1) {
-      // The access tile is always dry. A footprint may reclaim a few shoreline
-      // tiles; flattenArea turns them into a compact, level foundation.
-      if (reserved.has(keyOf(px, py))) return false;
-    }
-  }
-  return true;
-}
 
 function reserveBuilding(reserved, building) {
   for (let y = building.y - 1; y <= building.y + building.height; y += 1) {
@@ -560,33 +673,6 @@ function reserveBuilding(reserved, building) {
   }
 }
 
-function candidateAtRoad(road, side, width, height) {
-  if (side === 0) return { x: road.x - Math.floor(width / 2), y: road.y - height, door: { x: road.x, y: road.y }, orientation: "south" };
-  if (side === 1) return { x: road.x - Math.floor(width / 2), y: road.y + 1, door: { x: road.x, y: road.y }, orientation: "north" };
-  if (side === 2) return { x: road.x - width, y: road.y - Math.floor(height / 2), door: { x: road.x, y: road.y }, orientation: "east" };
-  return { x: road.x + 1, y: road.y - Math.floor(height / 2), door: { x: road.x, y: road.y }, orientation: "west" };
-}
-
-function zoneForFootprint(map, candidate, width, height, allowedZones) {
-  const centerX = candidate.x + Math.floor((width - 1) / 2);
-  const centerY = candidate.y + Math.floor((height - 1) / 2);
-  const zone = map.zoneMap[centerY * map.width + centerX];
-  if (!allowedZones.includes(zone)) return null;
-  let matching = 0;
-  for (let y = candidate.y; y < candidate.y + height; y += 1) {
-    for (let x = candidate.x; x < candidate.x + width; x += 1) if (map.zoneMap[y * map.width + x] === zone) matching += 1;
-  }
-  return matching >= Math.ceil(width * height * 0.6) ? zone : null;
-}
-
-function dimensionOptions(type, random) {
-  if (type === "house") return [[random.int(2, 4), random.int(2, 3)], [3, 2], [2, 2]];
-  const sizes = {
-    inn: [[5, 4], [4, 3]], shop: [[4, 3], [3, 3]], smithy: [[4, 3], [3, 3]], hall: [[5, 4], [4, 4]],
-    chapel: [[4, 5], [3, 4]], market: [[5, 4], [4, 3]], mill: [[4, 4], [3, 4]], tower: [[3, 3]],
-  };
-  return sizes[type] || [[3, 3]];
-}
 
 function buildingStyle(map, type, zone, random) {
   const biomeStyle = BIOME_STYLES[map.settings.biome];
@@ -612,85 +698,6 @@ function buildingStyle(map, type, zone, random) {
   };
 }
 
-function placeBuildings(map, random, roadMap) {
-  const reserved = new Set();
-  const usedDoors = new Set();
-  // A building may touch its access road, but its footprint never replaces a
-  // road tile (especially important where a bridge crosses reclaimed land).
-  for (const key of roadMap.keys()) reserved.add(key);
-  for (let y = map.plaza.y - 1; y <= map.plaza.y + map.plaza.height; y += 1) {
-    for (let x = map.plaza.x - 1; x <= map.plaza.x + map.plaza.width; x += 1) reserved.add(keyOf(x, y));
-  }
-  const roads = map.roads.filter((road) => road.kind !== "plaza");
-  const villageCenter = {
-    x: map.plaza.x + (map.plaza.width - 1) / 2,
-    y: map.plaza.y + (map.plaza.height - 1) / 2,
-  };
-  const settlement = SETTLEMENTS[map.settings.settlement];
-  const houseTarget = random.int(...settlement.houses);
-  const types = [...settlement.services, ...new Array(houseTarget).fill("house")];
-  const buildings = [];
-  for (const type of types) {
-    let placed = false;
-    const isHouse = type === "house";
-    const dimensions = dimensionOptions(type, random);
-    const allowedZones = TYPE_ZONES[type];
-    // Enumerate every frontage exactly once. Random side sampling could miss a
-    // valid final lot even after thousands of attempts on a crowded village.
-    const spread = isHouse ? map.width * 0.18 : 3;
-    const frontageCandidates = roads.flatMap((road) => [0, 1, 2, 3].map((side) => ({
-      road,
-      side,
-      score: Math.hypot(road.x - villageCenter.x, road.y - villageCenter.y) + random() * spread,
-    })));
-    const frontages = [
-      ...frontageCandidates.filter(({ side }) => side === 0 || side === 2).sort((a, b) => a.score - b.score),
-      ...frontageCandidates.filter(({ side }) => side === 1 || side === 3).sort((a, b) => a.score - b.score),
-    ];
-    for (const [width, height] of dimensions) {
-      for (const { road, side } of frontages) {
-        if (placed) break;
-        const candidate = candidateAtRoad(road, side, width, height);
-        if (usedDoors.has(keyOf(candidate.door.x, candidate.door.y))) continue;
-        if (!rectangleClear(map, reserved, candidate.x, candidate.y, width, height)) continue;
-        const zone = zoneForFootprint(map, candidate, width, height, allowedZones);
-        if (!zone) continue;
-      const levels = [];
-      for (let y = candidate.y; y < candidate.y + height; y += 1) for (let x = candidate.x; x < candidate.x + width; x += 1) {
-        const level = map.heightLevel[y * map.width + x];
-        if (level > 0) levels.push(level);
-      }
-      levels.sort((a, b) => a - b);
-      const baseLevel = levels[Math.floor(levels.length / 2)] || map.plaza.level;
-      flattenArea(map, candidate.x, candidate.y, width, height, baseLevel, BIOMES[map.settings.biome].ground);
-      for (let y = candidate.y; y < candidate.y + height; y += 1) {
-        for (let x = candidate.x; x < candidate.x + width; x += 1) map.zoneMap[y * map.width + x] = zone;
-      }
-      const doorIndex = candidate.door.y * map.width + candidate.door.x;
-      if (map.terrain[doorIndex] === "water") {
-        map.terrain[doorIndex] = BIOMES[map.settings.biome].ground;
-        map.heightLevel[doorIndex] = baseLevel;
-      }
-      const style = buildingStyle(map, type, zone, random);
-      const building = {
-        id: `building-${buildings.length + 1}`,
-        type, x: candidate.x, y: candidate.y, width, height,
-        door: candidate.door, orientation: candidate.orientation,
-        entranceVisible: candidate.orientation === "south" || candidate.orientation === "east",
-        baseLevel, zone,
-        ...style,
-        variant: random.int(0, 5),
-      };
-      buildings.push(building);
-      usedDoors.add(keyOf(building.door.x, building.door.y));
-      reserveBuilding(reserved, building);
-      placed = true;
-      }
-    }
-    if (!placed) throw new Error(`Não foi possível posicionar ${type} ${buildings.length + 1}/${types.length} para a seed ${map.seed}`);
-  }
-  return { buildings, reserved };
-}
 
 function placeProps(map, random, reserved, roadMap, buildings) {
   const props = [];
@@ -699,6 +706,7 @@ function placeProps(map, random, reserved, roadMap, buildings) {
   const choices = [biome.tree, biome.tree, "rock", map.settings.biome === "wetland" ? "reeds" : "bush"];
   const desired = Math.floor(map.width * map.height / 95);
   const blocked = new Set(reserved);
+  for (const building of buildings) reserveBuilding(blocked, building);
   for (const key of roadMap.keys()) blocked.add(key);
   for (let y = map.plaza.y; y < map.plaza.y + map.plaza.height; y += 1) for (let x = map.plaza.x; x < map.plaza.x + map.plaza.width; x += 1) blocked.add(keyOf(x, y));
 
@@ -780,10 +788,10 @@ export function generateVillage(seedInput = "", inputSettings = {}) {
 
 function buildVillage(seed, settings, plazaChoice) {
   const numericSeed = hashString(seed);
-  const random = createRandom(`${seed}:v3`);
+  const random = createRandom(`${seed}:v4`);
   const fields = createTerrain(numericSeed, settings);
   const map = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     seed,
     settings,
     width: settings.mapSize,
@@ -796,6 +804,7 @@ function buildVillage(seed, settings, plazaChoice) {
   };
   if (settings.rivers) carveRiver(numericSeed, map, random.fork("river"));
   map.plaza = choosePlaza(map, random.fork("plaza"), plazaChoice);
+  map.civicCampus = reserveCivicCampus(map);
   const roadMap = new Map();
   for (let y = map.plaza.y; y < map.plaza.y + map.plaza.height; y += 1) {
     const row = [];
@@ -807,6 +816,7 @@ function buildVillage(seed, settings, plazaChoice) {
     for (let y = map.plaza.y; y < map.plaza.y + map.plaza.height; y += 1) column.push({ x, y });
     addRoadPath(roadMap, column, "plaza", map);
   }
+  createCivicPerimeter(map, roadMap);
   if (settings.layout === "grid") createGridRoads(map, random.fork("grid"), roadMap);
   else createOrganicRoads(map, random.fork("organic"), roadMap);
   smoothRoadHeights(map, roadMap);
@@ -828,9 +838,6 @@ function buildVillage(seed, settings, plazaChoice) {
     style: (type, zone, styleRandom) => buildingStyle(map, type, zone, styleRandom),
     flatten: (x, y, width, height, level, zone) => {
       flattenArea(map, x, y, width, height, level, BIOMES[map.settings.biome].ground);
-      for (let py = y; py < y + height; py += 1) {
-        for (let px = x; px < x + width; px += 1) map.zoneMap[py * map.width + px] = zone;
-      }
     },
   });
   map.roadSegments = placement.roadSegments;
@@ -846,6 +853,16 @@ function buildVillage(seed, settings, plazaChoice) {
     terrainCounts: terrainCounts(map.terrain),
     zoneCounts: Object.fromEntries(map.zones.map((zone) => [zone.type, zone.cellCount])),
   };
+  // Very small settlements cannot absorb an isolated workshop or dwelling:
+  // one orphan already exceeds ten percent. Retry the settlement location.
+  if (settings.settlement === 'hamlet') {
+    const compatible = { residential: ['residential', 'commercial', 'civic'], commercial: ['residential', 'commercial', 'craft', 'civic'], craft: ['craft', 'commercial'], civic: ['civic', 'commercial', 'residential'] };
+    const urban = map.buildings.filter((building) => building.zone !== 'agricultural');
+    const clustered = urban.filter((building) => map.buildings.some((other) => other !== building && compatible[building.zone].includes(other.zone)
+      && Math.hypot(Math.max(0, other.x - building.x - building.width, building.x - other.x - other.width),
+        Math.max(0, other.y - building.y - building.height, building.y - other.y - other.height)) <= 8));
+    if (clustered.length / urban.length < .9) throw new Error(`Parcelamento insuficiente para vizinhança funcional na seed ${seed}`);
+  }
   map.validation = validateVillage(map);
   if (!map.validation.valid) throw new Error(`Mapa inválido para a seed ${seed}: ${map.validation.errors.join("; ")}`);
   return map;

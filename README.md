@@ -1,265 +1,35 @@
-<div align="center">
+# VillageGen
 
-# 🏘️ Village Gen
+Gerador procedural de vilas medievais em 3D, com Godot C#, modelos autorais Blender e execução local/offline. A interface atual é um HUD nativo sobre o mapa, sem WinForms, navegador ou servidor. A mesma seed e as mesmas configurações reproduzem o mapa dentro da versão 4.
 
-### Gerador procedural de vilas medievais em 2.5D isométrico
+## Início rápido
 
-Gere povoados, vilas e cidades inteiras a partir de uma seed — diretamente no navegador, sem engine, sem CDN e sem dependências de execução além do Node.js.
+Baixe o pacote Windows x64 na página de [Releases](https://github.com/LightWolfMan/village-gen/releases), extraia a pasta inteira e abra `Village.exe`. A prévia nativa inclui o runtime: não precisa de navegador, servidor ou instalação do .NET. Não execute o EXE isolado de seu PCK e da pasta de dados. Esta é uma versão de desenvolvimento; savegame está desativado, mas as preferências são preservadas.
 
-![Node.js](https://img.shields.io/badge/Node.js-20%2B-5FA04E?logo=nodedotjs&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JavaScript-Vanilla-F7DF1E?logo=javascript&logoColor=111)
-![Canvas](https://img.shields.io/badge/Canvas-2D-E34F26?logo=html5&logoColor=white)
-![Blender](https://img.shields.io/badge/Arte-Blender_4.5-F5792A?logo=blender&logoColor=white)
-![Status](https://img.shields.io/badge/status-Village_v3-6C63FF)
-![Licença](https://img.shields.io/badge/licen%C3%A7a-a_definir-555)
+No Windows, abra o atalho **VillageGen** ou execute `INICIAR.cmd`. Ambos iniciam `dist/Village/Village.exe`. Preserve a pasta inteira da distribuição, incluindo PCK e runtime. Para compilar, use `tools/build-native.ps1 -Export`; as ferramentas ficam em `workbench/`. A implementação web anterior continua no repositório como referência e pode ser executada com `npm start`, mas não é usada pelo atalho.
 
-**Determinístico · Offline · Leve · Sem frameworks · Preparado para outros jogos**
+O botão Nova vila sorteia outra seed; Aplicar ajustes ou Enter mantém a seed informada. Ajuste várias opções de território antes de aplicar; qualidade e distritos mudam imediatamente. Arraste esquerdo move o mapa, direito gira e inclina, e a roda amplia. Centralizar enquadra as construções; Vista geral enquadra o mapa. A exportação PNG sempre contém o mapa inteiro, independentemente da câmera atual.
 
-</div>
+Para recriar o atalho com o ícone próprio, execute `powershell -NoProfile -ExecutionPolicy Bypass -File tools/create-shortcut.ps1`. `INICIAR.cmd` usa o mesmo launcher nativo. O ícone está documentado em [assets/app-icon/README.md](assets/app-icon/README.md).
 
----
+## Conteúdo
 
-## ✨ O que é o projeto?
+A interface usa uma barra inferior por ícones e temas Sistema, Claro e Escuro. **Território** abre a geração; **Regiões** reúne zonas e seleção; **Visão** controla o enquadramento; **Ajustes** contém as opções gráficas. Clique em Passear para explorar em primeira pessoa: WASD caminha, Espaço pula, Shift corre, mouse olha e Esc pausa. O personagem sobe degraus de até 26 cm. Continuar recaptura o mouse; Voltar à vista aérea recupera o enquadramento anterior. Água, obstáculos e laterais das pontes bloqueiam passagem. Não há interiores ou corpo visível.
 
-O **Village Gen** cria assentamentos medievais completos em mapas isométricos. Cada seed define terreno, água, relevo, ruas, pontes, distritos, lotes, construções, plantações, árvores e objetos decorativos. A mesma seed, com as mesmas configurações, sempre produz a mesma vila.
+Há quatro biomas, traçados orgânico e em quadras, assentamentos de três escalas e distritos residencial, comercial, artesanal, agrícola e cívico. O catálogo contém 160 modelos arquitetônicos, 15 objetos e cinco módulos longitudinais de ponte. Lotes usam as dimensões reais dos modelos, incluindo anexos; edifícios não são encolhidos para caber. Coberturas publicam âncoras explícitas para apoiar ornamentos em cada bioma.
 
-> 📌 Essa garantia vale dentro de uma mesma versão do gerador. As correções de terreno e traçado de agosto de 2026 mudaram o desenho dos mapas, então uma seed anotada antes disso continua funcionando, mas devolve um resultado diferente do de antes.
+A interface mantém o mapa anterior durante a geração em tarefa C#. Regiões reúne distritos e seleção; Ajustes usa sete ícones com popups não modais. Simulação inclui crescimento de construções, pausa e velocidades, moradores, transporte e ecologia experimental. Equilibrada usa FXAA, Alta acrescenta MSAA 4× e Máxima usa supersampling 1,5×; limite de 60 fps. As limitações e verificações estão em `PROJETO.md`.
 
-A geração segue o fluxo `rua → segmento → fachada → lote → construção`. Isso faz os prédios acompanharem as vias, respeitarem áreas secas e ocuparem lotes funcionais, em vez de serem espalhados aleatoriamente pelo mapa.
+## Desenvolvimento
 
-> 💡 O modelo interno já foi organizado para futuros conversores de mapas para **Minecraft**, jogos de construção inspirados em **SimCity** e até mapas com setores no estilo **Doom**.
+Execute `npm ci` para instalar as dependências de desenvolvimento. `npm test` executa os testes, `npm run check` verifica a sintaxe, e `npm run test:audit` executa a bateria de seeds e configurações. As medições reais e limitações estão em [PROJETO.md](PROJETO.md).
 
-## 🌟 Destaques
+Para capturas e testes em Chromium, execute `npx playwright install chromium` uma vez e depois `npm run visual -- --smoke --out .cache/visual-v4`. O comando `npm run visual -- --seed visual-17 --benchmark --out .cache/visual-v4-benchmark` mede intervalos de quadros durante navegação e estabilidade de recursos na troca de mapas. A ferramenta usa o renderer WebGL real, não uma simulação Canvas.
 
-| Recurso | O que está disponível |
-|:--|:--|
-| 🌱 Geração determinística | A mesma seed e as mesmas opções recriam exatamente a mesma estrutura |
-| 🗺️ Escalas | Povoado, vila e cidade; mapas de 72, 96 e 128 tiles |
-| 🌦️ Biomas | Campo temperado, sertão árido, planalto nevado e pântano |
-| 🛣️ Traçados | Caminhos orgânicos ou quadras ortogonais |
-| 🏘️ Urbanismo | Segmentos viários, fachadas, lotes e alinhamento das construções |
-| 🧭 Distritos | Residencial, mercantil, oficinas, cívico e rural |
-| 🌉 Pontes | Travessias retas e contínuas, ligadas a duas margens secas |
-| 🏠 Arquitetura | 112 sprites temperados, com famílias, variantes e quatro orientações |
-| 🎨 Terreno | Paleta própria para cada tipo de solo do bioma, relevo sombreado e vias contínuas |
-| 🎥 Câmera | Arraste, zoom e enquadramento do assentamento |
-| 🖼️ Exportação | PNG do mapa completo, independentemente da posição da câmera |
-| 📴 Uso offline | Nenhum CDN, fonte remota ou chamada de rede durante o uso |
-| 🧪 Qualidade | 48 testes automatizados, e 660 seeds geradas sem uma única falha entre a bateria padrão e a varredura de robustez |
+Se o Chromium automatizado usar SwiftShader, acrescente `--channel chrome` para testar o Chrome instalado. Nesta máquina, esse canal usou a Radeon Vega 8 e atingiu aproximadamente 60 fps no cenário medido. Consulte os detalhes e as limitações em `PROJETO.md`.
 
-## 🚀 Início rápido
-
-### Windows
-
-Instale o [Node.js 20 ou superior](https://nodejs.org/), clone este repositório e dê dois cliques em **`INICIAR.cmd`**. O servidor será aberto em segundo plano e o navegador seguirá para `http://127.0.0.1:4173`.
-
-Também é possível iniciar manualmente:
-
-```powershell
-git clone https://github.com/LightWolfMan/village-gen.git
-cd village-gen
-npm start
-```
+`npm run art:models` regenera os GLBs e seus catálogos medidos no Blender. Consulte [a documentação de arte](assets/ART.md) e [o pipeline Blender](tools/blender/README.md). `npm run vendor` reconstrói os módulos Three locais na versão fixada.
 
-### macOS e Linux
+## Licenças
 
-Com o Node.js 20 ou superior instalado:
-
-```bash
-git clone https://github.com/LightWolfMan/village-gen.git
-cd village-gen
-npm start
-```
-
-Depois, abra [http://127.0.0.1:4173](http://127.0.0.1:4173) no navegador.
-
-> 🌍 **Repositório público:** qualquer pessoa pode clonar o projeto sem precisar de acesso especial. Uma cópia já clonada continua funcionando offline.
-
-## ✅ O que precisa ser instalado?
-
-| Objetivo | Obrigatório | Observação |
-|:--|:--|:--|
-| Usar o gerador | Node.js 20+ e navegador moderno | Não é necessário executar `npm install` |
-| Alterar o código | Editor de sua preferência | O projeto usa JavaScript modular sem frameworks |
-| Rodar os testes | Node.js 20+ | O executor de testes já faz parte do Node.js |
-| Regenerar a arte no Windows | Blender 4.5+ e PowerShell 7 | Os PNGs prontos já estão versionados |
-| Regenerar a arte no macOS/Linux | Blender 4.5+ | Os scripts Python podem ser chamados pelo Blender diretamente |
-
-Em outras palavras: para **recriar e executar a aplicação em qualquer computador**, basta clonar o repositório e instalar Node.js 20+. O Blender é uma ferramenta de produção; ele não faz parte do funcionamento normal do aplicativo.
-
-## 🎮 Como usar
-
-| Ação | Controle |
-|:--|:--|
-| Criar outro mapa | Clique em **Gerar novo vilarejo** |
-| Repetir um mapa | Digite ou cole a seed e pressione **Enter** |
-| Mover a câmera | Clique e arraste o mapa |
-| Aproximar ou afastar | Use a roda do mouse |
-| Enquadrar o assentamento | Clique em **Centralizar** |
-| Ver os distritos | Ative a visualização de zonas |
-| Salvar o mapa | Use **Exportar PNG** |
-
-As opções de bioma, tamanho, água, rios, traçado e escala do assentamento fazem parte da geração. Para reproduzir um resultado, preserve tanto a seed quanto essas configurações.
-
-## 🧠 Como a geração funciona
-
-```mermaid
-flowchart LR
-    A["🌱 Seed + configurações"] --> B["⛰️ Terreno e água"]
-    B --> C["🛣️ Estradas e praça"]
-    C --> D["🌉 Pontes e segmentos"]
-    D --> E["🧭 Distritos"]
-    E --> F["📐 Fachadas e lotes"]
-    F --> G["🏠 Construções e serviços"]
-    G --> H["🌳 Props e vegetação"]
-    H --> I["✅ Validação"]
-    I --> J["🖼️ Renderização e PNG"]
-```
-
-O núcleo é independente da tela e expõe a ideia de `generateVillage(seed, settings) → VillageMap`. O resultado usa exclusivamente `schemaVersion: 3` e é serializável, o que facilita criar exportadores sem acoplar a lógica ao Canvas.
-
-### VillageMap v3 em poucas palavras
-
-| Estrutura | Responsabilidade |
-|:--|:--|
-| `terrain`, `heightLevel` | Tipo e altura de cada tile |
-| `zoneMap`, `zones` | Zoneamento funcional do assentamento |
-| `roads`, `roadSegments` | Malha viária, conexões cardinais e trechos retos |
-| `bridgeSpans` | Pontes ordenadas entre margens secas |
-| `frontages` | Faixas edificáveis voltadas para as ruas |
-| `lots` | Células, limites, acesso e ocupação dos lotes |
-| `buildings` | Família, variante, orientação, porta, lote e fachada |
-| `props` | Árvores, plantas, pedras, cercas e objetos de cenário |
-| `validation` | Resultado das verificações estruturais do mapa |
-
-## 🏗️ Arquitetura do projeto
-
-```text
-village-gen/
-├── assets/                  # Sprites e documentação visual
-│   ├── buildings/           # 112 edifícios temperados
-│   └── environment/         # Vias, pontes, vegetação e objetos
-├── src/
-│   ├── core/                # Geração determinística e validação
-│   ├── render/              # Canvas isométrico e câmera
-│   └── app.js               # Interface, eventos e exportação
-├── tests/                   # Testes nativos do Node.js
-├── tools/blender/           # Modelagem e renderização reproduzíveis
-├── index.html               # Interface principal
-├── styles.css               # Aparência da aplicação
-├── server.mjs               # Servidor local sem dependências
-├── INICIAR.cmd              # Inicialização rápida no Windows
-├── PROJETO.md               # Arquitetura e histórico técnico
-└── package.json             # Comandos do projeto
-```
-
-O Canvas renderiza terreno, água, profundidade, sombras projetadas, reflexos na margem e fallbacks procedurais. Os edifícios e objetos temperados são pré-renderizados no Blender, mantendo a aparência 2.5D detalhada sem exigir 3D em tempo real.
-
-## 🧪 Desenvolvimento e testes
-
-Não há pacotes de runtime para instalar. Os comandos principais são:
-
-| Comando | Finalidade |
-|:--|:--|
-| `npm start` | Inicia o servidor local na porta 4173 |
-| `npm test` | Executa toda a suíte automatizada |
-| `npm run check` | Verifica a sintaxe dos módulos principais |
-| `npm run visual` | Renderiza mapas em PNG fora do navegador |
-| `npm run art:buildings` | Regenera edifícios temperados no Windows |
-| `npm run art:environment` | Regenera vias, pontes e props no Windows |
-| `npm run art:all` | Regenera todo o conjunto Blender no Windows |
-
-Só o `npm run visual` pede `npm install` antes, porque usa um Canvas de linha de comando. Jogar, gerar mapas e rodar os testes continua sem instalar nada.
-
-Os testes verificam determinismo, limites do mapa, colisões, água, portas, acesso à praça, lotes, fachadas, zoneamento, topologia das vias, pontes, manifestos, transparência dos PNGs, paleta de terreno de cada bioma, exportação e servidor local.
-
-<details>
-<summary><strong>🎨 Como regenerar os sprites Blender</strong></summary>
-
-No Windows, confirme que `blender` está disponível no `PATH` ou ajuste o caminho usado pelos scripts em `tools/blender`. Em seguida execute:
-
-```powershell
-npm run art:all
-```
-
-Os scripts geram modelos e PNGs de forma reproduzível. No macOS e Linux, os arquivos Python dentro de `tools/blender` podem ser executados diretamente pelo Blender em modo background; os atalhos `npm run art:*` usam PowerShell e foram preparados principalmente para Windows.
-
-</details>
-
-<details>
-<summary><strong>🖼️ Como comparar o visual antes e depois de uma mudança</strong></summary>
-
-`tools/visual/render.mjs` roda o mesmo renderer da página fora do navegador e grava PNGs em disco, com os sprites Blender de verdade. Serve para ver o efeito de uma mudança sem depender do olho no navegador:
-
-```powershell
-npm install
-npm run visual
-```
-
-O comando sem argumentos grava sete vistas em `shots/`: uma por bioma, os dois traçados, um povoado e o overlay de zonas. Guarde essa pasta antes de mexer no visual, repita depois e compare imagem a imagem.
-
-Para um caso específico:
-
-```powershell
-npm run visual -- --seed "Aurora do Norte" --biome arid --settlement town --rivers
-npm run visual -- --seed minha-seed --crop 1380,600,1000,620
-```
-
-Aceita `--seed`, `--biome`, `--settlement`, `--layout`, `--size`, `--water`, `--rivers`, `--zones`, `--out`, `--width` e `--crop`. Foi essa ferramenta que revelou que nove tipos de terreno caíam num fallback silencioso para grama e que a sombra dos edifícios existia mas era repintada pelo terreno.
-
-Consulte [`assets/ART.md`](assets/ART.md), [`assets/buildings/ART.md`](assets/buildings/ART.md) e [`assets/environment/ART.md`](assets/environment/ART.md) antes de alterar o pipeline visual.
-
-</details>
-
-<details>
-<summary><strong>🛠️ Solução de problemas</strong></summary>
-
-**O comando `node` não foi encontrado.** Instale o Node.js 20 ou superior, feche e abra o terminal novamente e confirme com `node --version`.
-
-**A página não abriu sozinha.** Execute `npm start` e abra manualmente `http://127.0.0.1:4173`.
-
-**A porta 4173 já está em uso.** Feche outra instância do gerador que esteja aberta e inicie novamente.
-
-**O clone do GitHub falhou.** Confira sua conexão, confirme a URL do repositório e tente novamente.
-
-**Um sprite não apareceu.** O renderer possui fallback procedural, então o mapa continua utilizável. Rode os testes e confira os manifestos de arte para descobrir qual PNG está ausente.
-
-</details>
-
-## 🧭 Roadmap
-
-- [x] Geração determinística por seed
-- [x] Quatro biomas e duas topologias viárias
-- [x] Urbanismo por segmentos, fachadas e lotes
-- [x] Zoneamento funcional
-- [x] Pontes contínuas e sprites Blender
-- [x] Exportação PNG do mapa completo
-- [ ] Exportação do `VillageMap` em JSON
-- [ ] Conversor experimental para Minecraft
-- [ ] Famílias Blender completas para todos os biomas
-- [ ] Personagem, colisão e malha navegável
-- [ ] Editor manual de ruas e lotes
-- [ ] Clima, iluminação dinâmica e população simulada
-
-## 📚 Documentação
-
-| Documento | Conteúdo |
-|:--|:--|
-| [`PROJETO.md`](PROJETO.md) | Arquitetura, contrato v3, decisões, validação e histórico |
-| [`assets/ART.md`](assets/ART.md) | Visão geral do pipeline visual |
-| [`assets/buildings/ART.md`](assets/buildings/ART.md) | Famílias arquitetônicas, variantes e âncoras |
-| [`assets/environment/ART.md`](assets/environment/ART.md) | Estradas, pontes, plantas e objetos |
-
-## 🔒 Licença e uso
-
-O repositório está **público**, mas ainda não possui uma licença de reutilização definida. O código e os assets atuais são originais deste projeto; nenhum asset proprietário de SimCity, Pokémon, Ninja Adventure ou de outros jogos foi incorporado.
-
-Antes de permitir reutilização ou distribuição externa, será necessário definir os termos em um arquivo `LICENSE`.
-
----
-
-<div align="center">
-
-Feito para transformar uma seed em um lugar com ruas, bairros e personalidade. 🌱🏘️
-
-</div>
+Código e modelos do projeto são originais; a licença de reutilização do projeto ainda precisa ser definida pelo proprietário. Nenhuma arte de outros jogos foi incorporada. Three.js é uma dependência sob licença MIT, preservada em `vendor/three/LICENSE`. Playwright é usado somente nas ferramentas de verificação e mantém seus termos no pacote de desenvolvimento.

@@ -1,0 +1,10 @@
+$ErrorActionPreference = 'Stop'
+$VillageRoot = Split-Path $PSScriptRoot -Parent
+$env:DOTNET_ROOT = Join-Path $VillageRoot 'workbench/dotnet'
+$env:DOTNET_CLI_HOME = Join-Path $VillageRoot 'workbench/dotnet-home'
+$env:NUGET_PACKAGES = Join-Path $VillageRoot 'workbench/nuget'
+$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+$env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
+$env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
+$env:PATH = "$env:DOTNET_ROOT;$env:PATH"
+$VillageGodot = Join-Path $VillageRoot 'workbench/godot/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64_console.exe'

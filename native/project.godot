@@ -1,0 +1,24 @@
+config_version=5
+
+[application]
+config/name="VillageGen"
+run/main_scene="res://Main.tscn"
+config/features=PackedStringArray("4.7", "C#", "Mobile")
+config/icon="res://assets/app-icon/village-icon.png"
+
+[display]
+window/size/viewport_width=1366
+window/size/viewport_height=768
+window/size/window_width_override=1366
+window/size/window_height_override=768
+window/stretch/mode="canvas_items"
+
+[dotnet]
+project/assembly_name="Village.Native"
+
+[rendering]
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="mobile"
+rendering_device/driver.windows="vulkan"
+textures/default_filters/use_nearest_mipmap_filter=false
+environment/defaults/default_clear_color=Color(0.75,0.76,0.78,1)

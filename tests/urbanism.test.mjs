@@ -15,7 +15,7 @@ function straightRoadMap() {
     });
   }
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     seed: "urbanism-unit",
     width, height,
     settings: { settlement: "hamlet", layout: "organic", biome: "temperate" },
@@ -27,7 +27,7 @@ function straightRoadMap() {
   };
 }
 
-test("urbanismo v3 deriva segmentos, fachadas e lote seco com acesso reto", () => {
+test("urbanismo v4 deriva segmentos, fachadas e lote seco com acesso reto", () => {
   const map = straightRoadMap();
   const plan = createUrbanPlan(map, createRandom("urbanism-unit"), {
     houseTarget: 1,
@@ -45,6 +45,10 @@ test("urbanismo v3 deriva segmentos, fachadas e lote seco com acesso reto", () =
   assert.equal(plan.lots.length, 1);
   const building = plan.buildings[0];
   const lot = plan.lots[0];
+  assert.ok(building.assetId.startsWith('temperate:cottage:'));
+  assert.ok(building.entrance && building.accessPath.length >= 2);
+  assert.equal(lot.rearDepth, 1);
+  assert.equal(lot.lateralGap, 1);
   assert.equal(building.lotId, lot.id);
   assert.equal(building.frontageId, lot.frontageId);
   assert.equal(map.roads[lot.roadIndex].connections, 10);
@@ -56,4 +60,12 @@ test("urbanismo v3 deriva segmentos, fachadas e lote seco com acesso reto", () =
       assert.notEqual(map.terrain[y * map.width + x], "water");
     }
   }
+});
+
+test("lote seco não invade nem repinta o distrito vizinho", () => {
+  const map = straightRoadMap();
+  map.zoneMap.fill('agricultural');
+  const zones = [...map.zoneMap];
+  assert.throws(() => createUrbanPlan(map, createRandom('wrong-zone'), { houseTarget: 1, services: [] }), /Parcelamento insuficiente/);
+  assert.deepEqual(map.zoneMap, zones);
 });

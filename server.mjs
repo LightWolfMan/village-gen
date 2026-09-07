@@ -10,6 +10,9 @@ const contentTypes = new Map([
   ['.html', 'text/html; charset=utf-8'],
   ['.css', 'text/css; charset=utf-8'],
   ['.js', 'text/javascript; charset=utf-8'],
+  ['.mjs', 'text/javascript; charset=utf-8'],
+  ['.glb', 'model/gltf-binary'],
+  ['.gltf', 'model/gltf+json'],
   ['.json', 'application/json; charset=utf-8'],
   ['.png', 'image/png'],
   ['.svg', 'image/svg+xml'],
@@ -66,6 +69,6 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`Gerador de Vila disponível em http://${host}:${port}`);
+  console.log(`Gerador de Vila disponível em http://${host}:${server.address().port}`);
   console.log('Pressione Ctrl+C para encerrar.');
 });
