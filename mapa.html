@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa do projeto · Village-gen + Vila do Vale</title>
+<style>
+:root{
+  --bg:#f7f6fb; --surface:#ffffff; --surface-2:#f1eefa; --line:#e4e0f0;
+  --ink:#1c1830; --ink-2:#4a4560; --ink-3:#6b6680;
+  --accent:#8B5CF6; --accent-ink:#6D28D9; --accent-soft:#ede7fe;
+  --ok:#15803d; --ok-soft:#e5f5ea; --run:#6D28D9; --run-soft:#ede7fe;
+  --idle:#5b6170; --idle-soft:#eef0f3; --stuck:#b45309; --stuck-soft:#fdf0dc;
+  --r:12px; --dur:300ms; --ease:cubic-bezier(.2,.8,.2,1);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:1180px;margin:0 auto;padding:24px 20px 64px}
+h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}
+h2{font-size:17px;margin:0 0 12px;font-weight:650}
+h3{font-size:15px;margin:0;font-weight:650}
+.muted{color:var(--ink-3)} .small{font-size:13px}
+.num{font-variant-numeric:tabular-nums}
+header.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.live{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 12px}
+.live .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);animation:pulse 2.4s ease-in-out infinite}
+.live.parado .dot{background:#9aa0ab;animation:none}
+.live.parado{color:var(--ink-3)}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.8)}}
+.hero{display:grid;grid-template-columns:1.1fr 1.4fr;gap:16px;margin-bottom:24px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;box-shadow:0 1px 2px rgba(28,24,48,.04)}
+.hero .faltam{border-left:4px solid var(--accent)}
+.big{font-size:44px;font-weight:750;line-height:1;color:var(--accent-ink)}
+.faltam .linha{display:flex;align-items:baseline;gap:12px}
+.bar{height:10px;background:var(--surface-2);border-radius:999px;overflow:hidden;margin-top:14px}
+.bar>i{display:block;height:100%;width:100%;background:var(--accent);border-radius:999px;transform-origin:left;transform:scaleX(0);transition:transform 600ms var(--ease)}
+.passo .acao{font-size:17px;font-weight:600;margin:4px 0 8px}
+.kicker{font-size:12px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink)}
+.meta{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--ink-3);margin-top:10px}
+section{margin-top:28px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.parte{position:relative}
+.parte h3{padding-right:54px}
+.parte p{margin:6px 0 0;color:var(--ink-2);font-size:14px}
+.parte .ev{font-size:12.5px;color:var(--ink-3);margin-top:8px;border-top:1px dashed var(--line);padding-top:8px;word-break:break-word}
+.parte .esp{margin-top:8px;font-size:13.5px;background:var(--stuck-soft);color:#7c3a06;border-radius:8px;padding:6px 10px}
+.selo{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;border-radius:999px;padding:3px 10px;margin-top:8px;transition:background var(--dur),color var(--dur)}
+.selo svg{width:14px;height:14px}
+.s-concluida{background:var(--ok-soft);color:var(--ok)}
+.s-andamento{background:var(--run-soft);color:var(--run)}
+.s-nao{background:var(--idle-soft);color:var(--idle)}
+.s-travada{background:var(--stuck-soft);color:var(--stuck)}
+.mudou-tag{position:absolute;top:12px;right:12px;font-size:11px;font-weight:700;background:var(--accent);color:#fff;border-radius:6px;padding:2px 7px}
+.mudou-de{font-size:12.5px;color:var(--accent-ink);margin-top:6px}
+.flash{animation:flash 700ms var(--ease) 1}
+@keyframes flash{0%{box-shadow:0 0 0 0 rgba(139,92,246,.0)}30%{box-shadow:0 0 0 4px rgba(139,92,246,.45);background:var(--accent-soft)}100%{box-shadow:0 0 0 0 rgba(139,92,246,0)}}
+.enter{opacity:0;transform:translateY(8px);animation:enter 400ms var(--ease) forwards}
+@keyframes enter{to{opacity:1;transform:none}}
+.pop{animation:pop 300ms var(--ease) 1}
+@keyframes pop{0%{transform:scale(.9)}60%{transform:scale(1.06)}100%{transform:scale(1)}}
+/* marcos */
+.trilha{display:flex;gap:0;overflow-x:auto;padding:4px 2px 8px}
+.marco{flex:1 1 0;min-width:150px;position:relative;padding:0 10px}
+.marco .no{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;border:2px solid var(--line);background:var(--surface);color:var(--ink-3);position:relative;z-index:1}
+.marco::before{content:"";position:absolute;top:15px;left:0;right:0;height:2px;background:var(--line)}
+.marco:first-child::before{left:50%} .marco:last-child::before{right:50%}
+.marco .no{margin:0 auto}
+.marco.concluida .no{background:var(--ok);border-color:var(--ok);color:#fff}
+.marco.andamento .no{background:var(--accent);border-color:var(--accent);color:#fff}
+.marco .t{text-align:center;margin-top:8px;font-size:13.5px;font-weight:600}
+.marco .c{text-align:center;font-size:12px;color:var(--ink-3)}
+.marco.opc .t{font-style:italic}
+/* decisões */
+.dec{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+.dec .card{padding:14px 16px}
+.dec .q{font-weight:600;font-size:14.5px}
+.ops{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.op{font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:2px 9px;color:var(--ink-2)}
+.op.pad{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft);font-weight:600}
+.pad-linha{font-size:13px;color:var(--ink-2)}
+/* painéis */
+.paineis{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
+.motivo{font-size:12.5px;color:var(--ink-3);margin:-6px 0 10px}
+ul.check{list-style:none;margin:0;padding:0}
+ul.check li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--surface-2);font-size:14px}
+ul.check li:last-child{border-bottom:0}
+.box{flex:none;width:18px;height:18px;border-radius:5px;border:2px solid #b9b3cc;margin-top:2px;display:grid;place-items:center}
+.box.ok{background:var(--ok);border-color:var(--ok)}
+.box.ok svg{width:12px;height:12px;color:#fff}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--surface-2);vertical-align:top}
+th{font-size:12px;color:var(--ink-3);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+td:first-child{color:var(--ink-3);white-space:nowrap}
+.risco{padding:8px 0;border-bottom:1px solid var(--surface-2)} .risco:last-child{border-bottom:0}
+.nivel{font-size:11.5px;font-weight:700;border-radius:6px;padding:1px 7px;margin-left:6px}
+.n-medio{background:var(--stuck-soft);color:var(--stuck)} .n-baixo{background:var(--idle-soft);color:var(--idle)} .n-alto{background:#fde4e4;color:#b91c1c}
+.wt{padding:8px 0;border-bottom:1px solid var(--surface-2);font-size:13.5px} .wt:last-child{border-bottom:0}
+.commit{display:flex;gap:10px;font-size:13px;padding:4px 0}
+.commit code{color:var(--accent-ink);font-family:Consolas,monospace}
+.aviso{font-size:13px;background:var(--accent-soft);color:var(--accent-ink);border-radius:8px;padding:8px 12px;margin-top:10px}
+footer{margin-top:36px;font-size:12.5px;color:var(--ink-3)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+@media (max-width:820px){.hero{grid-template-columns:1fr}.big{font-size:38px}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .enter{opacity:1;transform:none}
+  .flash{background:var(--accent-soft)}
+}
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div>
+      <div class="kicker">Mapa do projeto</div>
+      <h1 id="titulo">Village-gen + Vila do Vale</h1>
+      <div class="muted small" id="resumo"></div>
+    </div>
+    <div class="live" id="live" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="liveTxt">ao vivo</span></div>
+  </header>
+
+  <div class="hero">
+    <div class="card faltam" aria-live="polite">
+      <div class="kicker">Próximo marco</div>
+      <div class="linha"><span class="big num" id="faltamN">0</span><span>Faltam <b id="faltamTxt">0 coisas</b> pro próximo marco: <b id="marcoNome"></b></span></div>
+      <div class="bar" role="progressbar" aria-label="Progresso do marco" id="barWrap"><i id="bar"></i></div>
+      <div class="meta"><span id="progTxt"></span></div>
+    </div>
+    <div class="card passo">
+      <div class="kicker">Próximo passo sugerido</div>
+      <div class="acao" id="passoAcao"></div>
+      <div class="muted small" id="passoPorque"></div>
+      <div class="meta"><span id="dataTxt"></span><span id="mudouTxt"></span><span id="commitTxt"></span></div>
+    </div>
+  </div>
+
+  <section aria-labelledby="hPartes">
+    <h2 id="hPartes">Partes do projeto</h2>
+    <div class="grid" id="partes"></div>
+  </section>
+
+  <section aria-labelledby="hMarcos">
+    <h2 id="hMarcos">Marcos</h2>
+    <div class="card"><div class="trilha" id="marcos"></div>
+      <div class="muted small" style="margin-top:6px">Marcos definidos pelo Alisson (editáveis em <code>.project-map/marcos.json</code>).</div>
+    </div>
+  </section>
+
+  <section aria-labelledby="hDec">
+    <h2 id="hDec">Precisa da sua decisão</h2>
+    <div class="muted small" style="margin:-6px 0 10px">Se ninguém responder, segue o padrão (destacado em roxo).</div>
+    <div class="dec" id="decisoes"></div>
+  </section>
+
+  <section aria-labelledby="hPain">
+    <h2 id="hPain">Painéis</h2>
+    <div class="paineis" id="paineis"></div>
+  </section>
+
+  <footer>Abre offline. Lê <code>dados.js</code> e <code>aovivo.js</code> a cada 5 s, sem recarregar a página.</footer>
+</main>
+
+<script>
+(function(){
+  "use strict";
+  var REDUZ = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var ICON = {
+    "concluída":'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>',
+    "em andamento":'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor"/></svg>',
+    "não iniciada":'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke-dasharray="2.5 2.5"/></svg>',
+    "travada":'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>'
+  };
+  var CLS = {"concluída":"s-concluida","em andamento":"s-andamento","não iniciada":"s-nao","travada":"s-travada"};
+  var CHECK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>';
+  function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+  function $(id){return document.getElementById(id)}
+  function selo(st){return '<span class="selo '+(CLS[st]||"s-nao")+'">'+(ICON[st]||"")+esc(st)+'</span>'}
+  function flash(el){ if(!el) return; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+  function contar(el,alvo){
+    var de = parseInt(el.textContent,10)||0;
+    if(REDUZ||de===alvo){el.textContent=alvo;return}
+    var t0=performance.now(),dur=500;
+    (function f(t){var k=Math.min(1,(t-t0)/dur);k=1-Math.pow(1-k,3);el.textContent=Math.round(de+(alvo-de)*k);if(k<1)requestAnimationFrame(f)})(t0);
+    setTimeout(function(){el.textContent=alvo},dur+150);
+  }
+  function quando(iso){try{var d=new Date(iso);return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}catch(e){return iso}}
+
+  var antes = {mapa:null, partes:{}, aovivoTs:0, aovivoVisto:Date.now()};
+  var primeiro = true;
+
+  function render(M){
+    if(!M) return;
+    $("titulo").textContent = M.projeto || "Projeto";
+    $("resumo").textContent = M.resumo || "";
+    var pm = M.proximo_marco || {};
+    var mk = (M.marcos||[]).filter(function(m){return m.id===pm.id})[0] || {total:pm.faltam||0,feitos:0};
+    var n = pm.faltam||0;
+    contar($("faltamN"), n);
+    $("faltamTxt").textContent = n===1 ? "1 coisa" : n+" coisas";
+    $("marcoNome").textContent = (pm.id?pm.id+" · ":"")+(pm.nome||"");
+    var pct = mk.total ? mk.feitos/mk.total : 0;
+    requestAnimationFrame(function(){ $("bar").style.transform = "scaleX("+Math.max(pct,0.015)+")"; });
+    $("barWrap").setAttribute("aria-valuenow", Math.round(pct*100));
+    $("progTxt").textContent = mk.feitos+" de "+mk.total+" feitos";
+    var pp = M.proximo_passo||{};
+    if(antes.mapa && antes.mapa.proximo_passo && antes.mapa.proximo_passo.acao!==pp.acao) flash($("passoAcao").parentNode);
+    $("passoAcao").textContent = pp.acao||"";
+    $("passoPorque").textContent = pp.porque ? "Por quê: "+pp.porque : "";
+    $("dataTxt").textContent = "Atualizado em "+(M.data||"?");
+    $("commitTxt").textContent = "commit "+(M.commit||"?")+" · "+(M.branch||"");
+    var mud = M.mudancas||[];
+    $("mudouTxt").textContent = M.primeira_execucao ? "Primeiro mapa (nada pra comparar)" : (mud.length+(mud.length===1?" parte mudou":" partes mudaram"));
+
+    // partes
+    var box = $("partes"), mudMap = {};
+    mud.forEach(function(x){mudMap[x.id]=x});
+    (M.partes||[]).forEach(function(p,i){
+      var id="p-"+p.id, el=$(id), sig=JSON.stringify(p), velho=antes.partes[p.id];
+      var html = '<h3>'+esc(p.nome)+'</h3>'+selo(p.status)+
+        (mudMap[p.id]?'<div class="mudou-de">Mudou: '+esc(mudMap[p.id].de)+' → '+esc(mudMap[p.id].para)+'</div>':'')+
+        '<p>'+esc(p.resumo)+'</p>'+
+        (p.status==="travada"&&p.esperando?'<div class="esp"><b>Esperando:</b> '+esc(p.esperando)+'</div>':'')+
+        '<div class="ev">'+esc(p.evidencia)+'</div>';
+      var marca = mudMap[p.id] || (velho && velho.sig!==sig);
+      if(!el){
+        el=document.createElement("article"); el.className="card parte"+(primeiro?" enter":""); el.id=id;
+        if(primeiro){ el.style.animationDelay=(i*40)+"ms"; (function(e){setTimeout(function(){e.classList.remove("enter")},1200)})(el); }
+        box.appendChild(el);
+      }
+      if(!velho || velho.sig!==sig){
+        el.innerHTML = html + (marca?'<span class="mudou-tag">mudou</span>':'');
+        if(velho){ flash(el); var s=el.querySelector(".selo"); if(s && velho.status!==p.status && !REDUZ) s.classList.add("pop"); }
+      }
+      antes.partes[p.id]={sig:sig,status:p.status};
+    });
+    var vivos={}; (M.partes||[]).forEach(function(p){vivos["p-"+p.id]=1});
+    Array.prototype.slice.call(box.children).forEach(function(c){ if(!vivos[c.id]){ c.remove(); delete antes.partes[c.id.slice(2)]; } });
+
+    // marcos
+    var tr=$("marcos"), h="";
+    (M.marcos||[]).forEach(function(m){
+      var c = m.status==="concluída"?"concluida":m.status==="em andamento"?"andamento":"";
+      h+='<div class="marco '+c+(m.opcional?' opc':'')+'"><div class="no">'+(m.status==="concluída"?CHECK:esc(m.id))+'</div><div class="t">'+esc(m.id)+' · '+esc(m.nome)+'</div><div class="c num">'+m.feitos+'/'+m.total+' · '+esc(m.status)+'</div></div>';
+    });
+    if(tr.innerHTML!==h){ tr.innerHTML=h; if(!primeiro) flash(tr.parentNode); }
+
+    // decisões
+    var dh="";
+    (M.decisoes||[]).forEach(function(d){
+      dh+='<div class="card"><div class="q">'+esc(d.pergunta)+'</div><div class="ops">'+
+        (d.opcoes||[]).map(function(o){var nz=function(s){return String(s||"").toLowerCase().replace(/['"]/g,"")};var pad=nz(d.padrao).indexOf(nz(o).slice(0,12))>=0;return '<span class="op'+(pad?' pad':'')+'">'+esc(o)+'</span>'}).join("")+
+        '</div><div class="pad-linha"><b>Padrão:</b> '+esc(d.padrao)+' <span class="muted">· desde '+esc(d.desde)+'</span></div></div>';
+    });
+    (M.decisoes_resolvidas||[]).forEach(function(d){
+      dh+='<div class="card" style="background:var(--surface-2)"><div class="q">'+esc(d.pergunta)+'</div><span class="selo s-concluida">'+ICON["concluída"]+'resolvida</span><div class="pad-linha" style="margin-top:6px">'+esc(d.resposta)+' <span class="muted">· '+esc(d.em)+'</span></div></div>';
+    });
+    if($("decisoes").innerHTML!==dh) $("decisoes").innerHTML=dh;
+
+    // painéis
+    var ph="";
+    (M.paineis||[]).forEach(function(p){
+      ph+='<div class="card" id="pn-'+esc(p.id)+'"><h2>'+esc(p.titulo)+'</h2><div class="motivo">'+esc(p.motivo)+'</div><div class="corpo"></div></div>';
+    });
+    var pn=$("paineis");
+    if(pn.getAttribute("data-sig")!==ph){ pn.innerHTML=ph; pn.setAttribute("data-sig",ph); }
+    painelChecklist(M); painelOrigens(M); painelDesempenho(M); painelFila(M); painelRiscos(M); painelAoVivo();
+    antes.mapa = M; primeiro=false;
+  }
+
+  function corpo(id){var c=$("pn-"+id);return c?c.querySelector(".corpo"):null}
+  function setHTML(el,h){ if(el && el.innerHTML!==h){ var tinha=el.innerHTML!==""; el.innerHTML=h; if(tinha) flash(el.parentNode);} }
+
+  function painelChecklist(M){
+    var el=corpo("checklist")||corpo("checklist-m0"); if(!el) return;
+    var pm=M.proximo_marco||{}, h='<ul class="check">';
+    (pm.itens_feitos||[]).forEach(function(t){h+='<li><span class="box ok">'+CHECK+'</span><span><s>'+esc(t)+'</s></span></li>'});
+    (pm.itens_faltando||[]).forEach(function(t){h+='<li><span class="box" aria-hidden="true"></span><span>'+esc(t)+' <span class="muted small">(falta)</span></span></li>'});
+    setHTML(el,h+'</ul>');
+  }
+  function painelOrigens(M){
+    var el=corpo("duas-origens"); if(!el||!M.origens) return;
+    var a=M.origens.host||{}, b=M.origens.fonte||{};
+    var linhas=[["Projeto",a.nome,b.nome],["Godot",a.godot,b.godot],["Linguagem",a.linguagem,b.linguagem],["Renderer",(a.renderer_hoje||"")+" → "+(a.renderer_alvo||""),"(passa a usar o do host)"],["Cena","Main.tscn (maquete)",b.cena],["Rollback","—","commit "+(b.congelada_em||"?")]];
+    var h='<table><thead><tr><th></th><th>Casa nova (host)</th><th>Fonte</th></tr></thead><tbody>';
+    linhas.forEach(function(l){h+='<tr><td>'+esc(l[0])+'</td><td>'+esc(l[1])+'</td><td>'+esc(l[2])+'</td></tr>'});
+    setHTML(el,h+'</tbody></table>');
+  }
+  function painelDesempenho(M){
+    var el=corpo("desempenho"), D=M.desempenho; if(!el||!D) return;
+    var a=D.antiga||{}, n=D.nova||{}, mx=Math.max(n.p95||0,a.p95||0,n.avg||0,a.avg||0)*1.1||1;
+    function fmt(v){return v==null?"—":String(v.toFixed?v.toFixed(1):v).replace(".",",")}
+    function linha(rot,va,vn){
+      var d=(vn!=null&&va!=null)?vn-va:null, pior=d!=null&&d>0;
+      return '<div style="margin:8px 0"><div class="small" style="display:flex;justify-content:space-between"><b>'+rot+'</b><span class="num">'+fmt(va)+' → <b>'+fmt(vn)+' ms</b> '+
+        (d==null?'':'<span class="nivel '+(pior?'n-medio':'n-baixo')+'">'+(pior?'▲ pior ':'▼ melhor ')+fmt(Math.abs(d))+'</span>')+'</span></div>'+
+        '<div aria-hidden="true" style="position:relative;height:8px;background:var(--surface-2);border-radius:4px;margin-top:4px"><i style="position:absolute;left:0;top:0;bottom:0;width:'+Math.min(100,(vn/mx)*100)+'%;background:var(--accent);border-radius:4px"></i>'+
+        '<i style="position:absolute;top:-3px;bottom:-3px;width:2px;left:'+Math.min(100,(va/mx)*100)+'%;background:var(--ink-2)"></i></div></div>';
+    }
+    var h='<div class="small muted">Barra = agora ('+esc(n.rotulo||"Godot 4.7.2, Forward+")+'). Traço = antes ('+esc(a.rotulo||"")+'). Menor é melhor.</div>'+
+      linha("Média",a.avg,n.avg)+linha("p95",a.p95,n.p95)+
+      '<div class="small" style="margin-top:8px">Pico máximo: <span class="num">'+fmt(a.max)+' → <b>'+fmt(n.max)+' ms</b></span></div>'+
+      (n.acima_33!=null?'<div class="small">Quadros acima de 33 ms: <span class="num">'+(a.acima_33!=null?a.acima_33+' → ':'')+'<b>'+n.acima_33+'</b></span></div>':'')+
+      (n.vram_mib?'<div class="small">VRAM: <span class="num">'+n.vram_mib+'</span> MiB</div>':'')+
+      (D.limite_m1b?'<div class="aviso">Limite do M1b: '+esc(D.limite_m1b)+'</div>':'')+
+      (D.testes?'<div class="small" style="margin-top:8px"><b>Testes:</b> '+esc(D.testes)+'</div>':'')+
+      '<div class="small muted" style="margin-top:6px">'+esc(D.fonte||"")+'</div>';
+    setHTML(el,h);
+  }
+  function painelFila(M){
+    var el=corpo("fila-visual"); if(!el) return;
+    var h='<ul class="check">';
+    (M.fila_visual||[]).forEach(function(f){h+='<li><span class="box" aria-hidden="true"></span><span>'+esc(f.item)+' <span class="muted small">('+esc(f.quando)+')</span></span></li>'});
+    setHTML(el,h+'</ul>');
+  }
+  function painelRiscos(M){
+    var el=corpo("riscos"); if(!el) return;
+    var h="";
+    (M.riscos||[]).forEach(function(r){var n=(r.nivel||"").replace("é","e");h+='<div class="risco"><b>'+esc(r.risco)+'</b><span class="nivel n-'+esc(n)+'">'+esc(r.nivel)+'</span><div class="small muted">'+esc(r.detalhe)+'</div></div>'});
+    setHTML(el,h||'<span class="muted">Nenhum risco anotado.</span>');
+  }
+  function painelAoVivo(){
+    var el=corpo("aovivo"); if(!el) return;
+    var A=window.AOVIVO;
+    if(!A){ setHTML(el,'<span class="muted">Ainda sem dados ao vivo (aovivo.js não encontrado).</span>'); return; }
+    var h="";
+    (A.worktrees||[]).forEach(function(w){
+      h+='<div class="wt"><b>'+esc(w.branch||w.nome)+'</b> <span class="muted">· '+esc(w.nome)+'</span><div class="small">'+
+        '<span class="num">'+(w.nao_salvos||0)+'</span> arquivo(s) não salvos no git · <span class="num">'+(w.a_frente||0)+'</span> à frente / <span class="num">'+(w.atras||0)+'</span> atrás da main</div>'+
+        '<div class="small muted">'+esc(w.ultimo_commit)+'</div></div>';
+    });
+    var prs=(A.prs_abertos||[]).length, iss=(A.issues_abertas||[]).length;
+    h+='<div class="small" style="margin:10px 0 4px"><b>PRs abertos:</b> <span class="num">'+prs+'</span> · <b>Issues abertas:</b> <span class="num">'+iss+'</span></div>';
+    h+='<div class="small muted" style="margin-top:8px">Últimos commits na main</div>';
+    (A.commits_main||[]).slice(0,5).forEach(function(c){h+='<div class="commit"><code>'+esc(c.hash)+'</code><span>'+esc(c.msg)+'</span></div>'});
+    setHTML(el,h);
+  }
+
+  function selo_live(){
+    var A=window.AOVIVO, live=$("live"), txt=$("liveTxt");
+    if(A && A.atualizado_ts && A.atualizado_ts!==antes.aovivoTs){antes.aovivoTs=A.atualizado_ts;antes.aovivoVisto=Date.now();}
+    var ref = A && A.atualizado_ts ? A.atualizado_ts*1000 : antes.aovivoVisto;
+    var s = Math.max(0,Math.round((Date.now()-ref)/1000));
+    if(s>300){ live.classList.add("parado"); var d=new Date(ref); txt.textContent="parado desde "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}); }
+    else { live.classList.remove("parado"); txt.textContent="ao vivo · atualizado há "+(s<60?s+" s":Math.round(s/60)+" min"); }
+  }
+
+  function carregar(arq, cb){
+    var s=document.createElement("script");
+    s.src=arq+"?t="+Date.now();
+    s.onload=function(){s.remove();cb&&cb()};
+    s.onerror=function(){s.remove();cb&&cb()};
+    document.head.appendChild(s);
+  }
+  function ciclo(){
+    var sigM = JSON.stringify(window.MAPA||null), sigA = JSON.stringify(window.AOVIVO||null);
+    carregar("dados.js", function(){
+      carregar("aovivo.js", function(){
+        if(JSON.stringify(window.MAPA||null)!==sigM) render(window.MAPA);
+        else if(JSON.stringify(window.AOVIVO||null)!==sigA) painelAoVivo();
+        selo_live();
+      });
+    });
+  }
+  carregar("dados.js", function(){ carregar("aovivo.js", function(){ render(window.MAPA); selo_live(); }); });
+  setInterval(ciclo, 5000);
+  setInterval(selo_live, 1000);
+})();
+</script>
+</body>
+</html>
